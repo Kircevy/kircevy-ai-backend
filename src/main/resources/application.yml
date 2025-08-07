@@ -10,8 +10,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/kircevy-ai
-    username: root
-    password: 323497
+    username: xxx
+    password: xxx
   # redis
   data:
     redis:
@@ -46,7 +46,7 @@ langchain4j:
   open-ai:
     chat-model:
       base-url: https://api.deepseek.com
-      api-key: sk-c8e3b2f0f4c04b0a821c5b84c21669c8
+      api-key: xxx
       model-name: deepseek-chat
       strict-json-schema: true
       response-format: json_object
@@ -55,7 +55,7 @@ langchain4j:
       log-responses: true
     streaming-chat-model:
       base-url: https://api.deepseek.com
-      api-key: sk-c8e3b2f0f4c04b0a821c5b84c21669c8
+      api-key: xxx
       model-name: deepseek-chat
       max-tokens: 8192
       log-requests: true
