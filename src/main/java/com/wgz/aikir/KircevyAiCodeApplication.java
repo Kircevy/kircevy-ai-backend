@@ -7,10 +7,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication(exclude = {RedisEmbeddingStoreAutoConfiguration.class})
 @MapperScan("com.wgz.aikir.mapper")
-public class YuAiCodeMotherApplication {
+public class KircevyAiCodeApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(YuAiCodeMotherApplication.class, args);
+        SpringApplication.run(KircevyAiCodeApplication.class, args);
     }
 
 }

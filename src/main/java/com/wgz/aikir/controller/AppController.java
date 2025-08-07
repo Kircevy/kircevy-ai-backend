@@ -36,7 +36,7 @@ import java.util.Map;
 /**
  * 应用 控制层。
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
+ * @author <a href="https://gitee.com/jky_3477_0">WGZ</a>
  */
 @RestController
 @RequestMapping("/app")

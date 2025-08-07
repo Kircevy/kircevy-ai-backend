@@ -132,7 +132,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.wgz.aikir.YuAiCodeMotherApplication</mainClass>
+                    <mainClass>com.wgz.aikir.KircevyAiCodeApplication</mainClass>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

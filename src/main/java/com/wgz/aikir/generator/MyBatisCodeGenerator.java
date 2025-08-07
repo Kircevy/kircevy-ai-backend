@@ -73,7 +73,7 @@ public class MyBatisCodeGenerator {
 
         // 设置生成注释，比如生成的时间和作者，避免后续多余的代码改动
         globalConfig.getJavadocConfig()
-                .setAuthor("<a href=\"https://github.com/kircvey\">WGZ</a>")
+                .setAuthor("<a href=\"https://gitee.com/jky_3477_0\">WGZ</a>")
                 .setSince("");
         return globalConfig;
     }

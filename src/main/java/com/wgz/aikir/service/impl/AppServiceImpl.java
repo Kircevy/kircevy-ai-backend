@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 /**
  * 应用 服务层实现。
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
+ * @author <a href="https://gitee.com/jky_3477_0">WGZ</a>
  */
 @Service
 @Slf4j

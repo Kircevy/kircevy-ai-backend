@@ -3,7 +3,7 @@ package com.wgz.aikir.core.parser;
 /**
  * 代码解析器策略接口
  * 
- * @author yupi
+ * @author wgz
  */
 public interface CodeParser<T> {
 
