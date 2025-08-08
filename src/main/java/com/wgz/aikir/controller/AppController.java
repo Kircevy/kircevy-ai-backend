@@ -4,7 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.mybatisflex.core.paginate.Page;
-import com.mybatisflex.core.query.QueryWrapper;
+import com.mybatisflex.core.query.QueryWrapper;import com.wgz.aikir.ai.AiCodeGenTypeRoutingService;
 import com.wgz.aikir.annotation.AuthCheck;
 import com.wgz.aikir.common.BaseResponse;
 import com.wgz.aikir.common.DeleteRequest;
@@ -53,6 +53,9 @@ public class AppController {
 
     @Resource
     private ProjectDownloadService projectDownloadService;
+
+    @Resource
+    private AiCodeGenTypeRoutingService aiCodeGenTypeRoutingService;
 
     /**
      * 下载应用代码
@@ -163,7 +166,8 @@ public class AppController {
         // 应用名称暂时为 initPrompt 前 12 位
         app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
         // 暂时设置为多文件生成
-        app.setCodeGenType(CodeGenTypeEnum.VUE_PROJECT.getValue());
+        CodeGenTypeEnum codeGenTypeEnum = aiCodeGenTypeRoutingService.routeCodeGenType(initPrompt);
+        app.setCodeGenType(codeGenTypeEnum.getValue());
         // 插入数据库
         boolean result = appService.save(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
@@ -240,6 +244,18 @@ public class AppController {
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
         // 获取封装类（包含用户信息）
         return ResultUtils.success(appService.getAppVO(app));
+    }
+
+    /**
+     * 获取用户是否允许下载应用
+     *
+     * @param appId 应用 id
+     * @return 是否允许下载
+     */
+    @GetMapping("/isDownLoadAppAllowed")
+    public BaseResponse<Boolean> isDownLoadAppAllowed(Long appId){
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(appService.isDownLoadAppAllowed(appId));
     }
 
     /**

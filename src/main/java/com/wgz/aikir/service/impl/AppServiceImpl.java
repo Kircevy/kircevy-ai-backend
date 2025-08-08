@@ -29,11 +29,15 @@ import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
 import java.io.Serializable;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,6 +72,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private ScreenShotService screenShotService;
+    private ResourceLoader resourceLoader;
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -186,6 +191,28 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             appVO.setUser(userVO);
         }
         return appVO;
+    }
+
+    @Override
+    public boolean isDownLoadAppAllowed(Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 错误");
+        App app = getById(appId);
+        // 拼接项目预览目录
+        String previewDir = app.getCodeGenType() + "_" + appId;
+        return checkFileExists(previewDir);
+    }
+
+    /**
+     * 判断传入的文件名是否在项目目录下
+     * @param fileName 目标文件名
+     * @return
+     */
+    private boolean checkFileExists(String fileName){
+        String projectRoot = AppConstant.CODE_OUTPUT_ROOT_DIR;
+        // 构建完整路径：项目根目录 + 目标子文件夹
+        Path targetPath = Paths.get(projectRoot, fileName);
+        // 检查路径是否存在且是目录
+        return Files.exists(targetPath) && Files.isDirectory(targetPath);
     }
 
     @Override

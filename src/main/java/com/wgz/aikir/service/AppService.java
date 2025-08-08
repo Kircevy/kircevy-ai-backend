@@ -50,6 +50,8 @@ public interface AppService extends IService<App> {
      */
     AppVO getAppVO(App app);
 
+    boolean isDownLoadAppAllowed(Long appId);
+
     /**
      * 获取应用封装类列表
      *

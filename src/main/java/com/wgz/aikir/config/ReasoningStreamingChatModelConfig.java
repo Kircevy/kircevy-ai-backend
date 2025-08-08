@@ -20,7 +20,7 @@ public class ReasoningStreamingChatModelConfig {
     public StreamingChatModel reasoningStreamingChatModel() {
         // 测试环境
         final String modelName = "deepseek-chat";
-        final int maxTokens = 8193;
+        final int maxTokens = 8192;
         // 生产环境
 //        final String modelName = "deepseek-reasoning";
 //        final int maxTokens = 32768;

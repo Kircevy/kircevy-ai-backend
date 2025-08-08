@@ -7,6 +7,7 @@ import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.exception.ThrowUtils;
 import com.wgz.aikir.manage.CosManager;
 import com.wgz.aikir.service.ScreenShotService;
+import com.wgz.aikir.utils.WebScreenShotUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,8 +37,8 @@ public class ScreenShotServiceImpl implements ScreenShotService {
             return null;
         }
         log.info("开始生成网页截图: {}", webUrl);
-        // 生成截图
-        String localScreenshotPath = generateScreenShotKey(webUrl);
+        // 生成本地截图
+        String localScreenshotPath = WebScreenShotUtils.saveWebPageScreenshot(webUrl);
         ThrowUtils.throwIf(StrUtil.isBlank(localScreenshotPath), ErrorCode.OPERATION_ERROR, "本地截图生成失败");
         // 上传截图到 Cos 对象存储
         try {
