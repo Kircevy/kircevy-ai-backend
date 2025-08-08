@@ -24,6 +24,7 @@ import com.wgz.aikir.model.vo.AppVO;
 import com.wgz.aikir.model.vo.UserVO;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.service.ChatHistoryService;
+import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
+    private ScreenShotService screenShotService;
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -142,7 +146,29 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
         // 10. 返回可访问的 URL 地址
-        return String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        String appDeployUrl = String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        // 11. 调用截图方法并更新数据库
+        this.generateScreenShotAsync(appId, appDeployUrl);
+        return appDeployUrl;
+    }
+
+    /**
+     * 异步生成应用截图并入库
+     * @param appId 应用 ID
+     * @param appUrl 应用访问网址
+     */
+    @Override
+    public void generateScreenShotAsync(Long appId, String appUrl){
+        Thread.startVirtualThread(() -> {
+            // 生成截图并获取可访问的截图地址
+            String screenshotUrl = screenShotService.generateAndSaveScreenshot(appUrl);
+            log.info("更新应用封面截图： {}", screenshotUrl);
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setCover(screenshotUrl);
+            boolean updateResult = this.updateById(updateApp);
+            ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用封面截图失败");
+        });
     }
 
     @Override
