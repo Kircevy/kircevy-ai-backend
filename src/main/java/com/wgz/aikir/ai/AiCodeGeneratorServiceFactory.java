@@ -1,11 +1,10 @@
 package com.wgz.aikir.ai;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.wgz.aikir.ai.tool.FileWriteTool;
+import com.wgz.aikir.ai.tools.*;
 import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
-import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.service.ChatHistoryService;
 import dev.langchain4j.community.store.memory.chat.redis.RedisChatMemoryStore;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -13,7 +12,6 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.MemoryId;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -41,6 +39,9 @@ public class AiCodeGeneratorServiceFactory{
     @Resource
     @Lazy
     private ChatHistoryService chatHistoryService;
+
+    @Resource
+    private ToolManager toolManager;
 
 
     private final Cache<String, AiCodeGeneratorService> serviceCache = Caffeine.newBuilder()
@@ -80,12 +81,14 @@ public class AiCodeGeneratorServiceFactory{
         chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
         return switch (genTypeEnum) {
             case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
-                        .streamingChatModel(reasoningStreamingChatModel)
-                        .chatMemoryProvider(memoryId -> chatMemory)
-                        .tools(new FileWriteTool())
-                        .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
-                                toolExecutionRequest, "Error：there is no tool called" + toolExecutionRequest.name()
-                        )).build();
+                    .streamingChatModel(reasoningStreamingChatModel)
+                    .chatMemoryProvider(memoryId -> chatMemory)
+                    .tools(toolManager.getAllTools())
+                    .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
+                            toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
+                    ))
+                    .build();
+
             case HTML, MULTI_FILE -> AiServices.builder(AiCodeGeneratorService.class)
                     .chatModel(chatModel)
                     .streamingChatModel(openAiStreamingChatModel)
