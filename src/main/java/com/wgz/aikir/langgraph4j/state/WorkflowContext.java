@@ -56,6 +56,11 @@ public class WorkflowContext implements Serializable {
     private String enhancedPrompt;
 
     /**
+     * 质量检查结果
+     */
+    private QualityResult qualityResult;
+
+    /**
      * 代码生成类型
      */
     private CodeGenTypeEnum generationType;
@@ -69,11 +74,6 @@ public class WorkflowContext implements Serializable {
      * 构建成功的目录
      */
     private String buildResultDir;
-
-    /**
-     * 质量检查结果
-     */
-    private QualityResult qualityResult;
 
     /**
      * 错误信息
