@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;import com.wgz.aikir.ai.AiCodeGenTypeRoutingService;
+import com.wgz.aikir.ai.AiCodeGenTypeRoutingServiceFactory;
 import com.wgz.aikir.annotation.AuthCheck;
 import com.wgz.aikir.common.BaseResponse;
 import com.wgz.aikir.common.DeleteRequest;
@@ -55,7 +56,7 @@ public class AppController {
     private ProjectDownloadService projectDownloadService;
 
     @Resource
-    private AiCodeGenTypeRoutingService aiCodeGenTypeRoutingService;
+    private AiCodeGenTypeRoutingServiceFactory aiCodeGenTypeRoutingServiceFactory;
 
     /**
      * 下载应用代码
@@ -166,6 +167,8 @@ public class AppController {
         // 应用名称暂时为 initPrompt 前 12 位
         app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
         // 暂时设置为多文件生成
+        // 使用 AI 智能选择代码生成类型（多例模式）
+        AiCodeGenTypeRoutingService aiCodeGenTypeRoutingService = aiCodeGenTypeRoutingServiceFactory.createAiCodeGenTypeRoutingService();
         CodeGenTypeEnum codeGenTypeEnum = aiCodeGenTypeRoutingService.routeCodeGenType(initPrompt);
         app.setCodeGenType(codeGenTypeEnum.getValue());
         // 插入数据库

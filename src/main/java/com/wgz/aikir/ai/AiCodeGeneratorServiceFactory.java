@@ -6,6 +6,7 @@ import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.service.ChatHistoryService;
+import com.wgz.aikir.utils.SpringContextUtil;
 import dev.langchain4j.community.store.memory.chat.redis.RedisChatMemoryStore;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -18,20 +19,16 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
+import javax.swing.*;
 import java.time.Duration;
 
 @Configuration
 @Slf4j
 public class AiCodeGeneratorServiceFactory{
 
-    @Resource
+    @Resource(name = "openAiChatModel")
     private ChatModel chatModel;
 
-    @Resource
-    private StreamingChatModel openAiStreamingChatModel;
-
-    @Resource
-    private StreamingChatModel reasoningStreamingChatModel;
 
     @Resource
     private RedisChatMemoryStore redisChatMemoryStore;
@@ -80,7 +77,9 @@ public class AiCodeGeneratorServiceFactory{
         // 在创建AI服务时，直接从数据库中加载对话历史
         chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
         return switch (genTypeEnum) {
-            case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
+            case VUE_PROJECT -> {
+                StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
+                yield AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
                     .chatMemoryProvider(memoryId -> chatMemory)
                     .tools(toolManager.getAllTools())
@@ -88,12 +87,15 @@ public class AiCodeGeneratorServiceFactory{
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                     ))
                     .build();
-
-            case HTML, MULTI_FILE -> AiServices.builder(AiCodeGeneratorService.class)
+            }
+            case HTML, MULTI_FILE -> {
+                StreamingChatModel openAiStreamingChatModel = SpringContextUtil.getBean("streamingChatModelPrototype", StreamingChatModel.class);
+                yield AiServices.builder(AiCodeGeneratorService.class)
                     .chatModel(chatModel)
                     .streamingChatModel(openAiStreamingChatModel)
                     .chatMemory(chatMemory)
                     .build();
+            }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型: " + genTypeEnum);
         };
     }
