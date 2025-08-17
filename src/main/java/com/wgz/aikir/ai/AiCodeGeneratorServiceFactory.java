@@ -1,6 +1,7 @@
 package com.wgz.aikir.ai;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.wgz.aikir.ai.guardrail.PromptSafetyInputGuardrail;
 import com.wgz.aikir.ai.tools.*;
 import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
@@ -86,6 +87,8 @@ public class AiCodeGeneratorServiceFactory{
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                     ))
+                    .inputGuardrails(new PromptSafetyInputGuardrail())
+                    .maxSequentialToolsInvocations(20)
                     .build();
             }
             case HTML, MULTI_FILE -> {
@@ -94,6 +97,7 @@ public class AiCodeGeneratorServiceFactory{
                     .chatModel(chatModel)
                     .streamingChatModel(openAiStreamingChatModel)
                     .chatMemory(chatMemory)
+                    .inputGuardrails(new PromptSafetyInputGuardrail())
                     .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型: " + genTypeEnum);
