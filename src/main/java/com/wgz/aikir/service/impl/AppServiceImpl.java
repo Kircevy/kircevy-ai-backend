@@ -22,6 +22,8 @@ import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.model.vo.AppVO;
 import com.wgz.aikir.model.vo.UserVO;
+import com.wgz.aikir.monitor.MonitorContext;
+import com.wgz.aikir.monitor.MonitorContextHolder;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.service.ChatHistoryService;
 import com.wgz.aikir.service.ScreenShotService;
@@ -72,7 +74,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private ScreenShotService screenShotService;
-    private ResourceLoader resourceLoader;
+
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -94,10 +96,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
         // 5. 在调用 AI 前，先保存用户消息到数据库中
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
+        // 6. 设置监控上下文（埋点）
+        MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
         // 6. 调用 AI 生成代码（流式）
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
         // 7. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum);
+        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .doFinally(s -> {
+                            // 8. 清理监控上下文
+                            MonitorContextHolder.clearContext();
+                        });
     }
 
     @Override
