@@ -82,6 +82,18 @@
             <artifactId>dashscope-sdk-java</artifactId>
             <version>2.21.1</version>
         </dependency>
+        <!-- AgentScope Java -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope</artifactId>
+            <version>1.0.12</version>
+        </dependency>
+        <!-- AgentScope 传递依赖版本对齐 -->
+        <dependency>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-generator</artifactId>
+            <version>4.38.0</version>
+        </dependency>
         <!-- prometheus 监控  -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -181,7 +193,6 @@
                         <exclude>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.36</version>
                         </exclude>
                     </excludes>
                 </configuration>
