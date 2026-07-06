@@ -1,0 +1,17 @@
+package com.wgz.aikir.agentscope.model;
+
+import jakarta.validation.constraints.NotBlank;
+
+public class AgentScopeDemoRequest {
+
+    @NotBlank(message = "message must not be blank")
+    private String message;
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+}
