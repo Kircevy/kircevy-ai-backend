@@ -104,6 +104,4 @@ public class AiModelMonitorListener implements ChatModelListener {
             aiModelMetricsCollector.recordTokenUsage(userId, appId, modelName, "total", totalTokenCount);
         }
     }
-
-
 }

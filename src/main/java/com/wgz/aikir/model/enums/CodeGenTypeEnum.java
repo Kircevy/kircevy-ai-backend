@@ -11,7 +11,9 @@ public enum CodeGenTypeEnum {
 
     HTML("原生 HTML 模式", "html"),
     MULTI_FILE("原生多文件模式", "multi_file"),
-    VUE_PROJECT("VUE 工程模式", "vue_project");
+    VUE_PROJECT("VUE 工程模式", "vue_project"),
+    SPRINGBOOT("Spring Boot 后端工程模式", "springboot"),
+    FULLSTACK("全栈工程模式（Vue3 + Spring Boot）", "fullstack");
 
     private final String text;
     private final String value;

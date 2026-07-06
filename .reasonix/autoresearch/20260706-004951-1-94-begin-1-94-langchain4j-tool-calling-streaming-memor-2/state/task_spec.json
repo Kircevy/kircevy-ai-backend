@@ -1,0 +1,25 @@
+{
+  "task_id": "20260706-004951-1-94-begin-1-94-langchain4j-tool-calling-streaming-memor-2",
+  "goal": "你先学习这个项目，然后看下下面这个下一阶段需求：\n[已粘贴文本 #1 · 94 行]\n\n--- Begin [已粘贴文本 #1 · 94 行] ---\n让我先全面了解你当前项目的结构和已有能力，再给出针对性的建议。\r\n\r\n我已经全面了解了这个项目的现状，以下是评估和下一步计划的建议。\r\n\r\n---\r\n\r\n## 项目现状评估\r\n\r\n实话实说，这个项目的 **底层工程已经很扎实**——LangChain4j 用到了 Tool calling、Streaming、Memory（Redis 持久化）、Guardrail、结构化输出、多模型路由，比市面上很多\"调个 API 就完事\"的 demo 深入得多。你已经覆盖了 LangChain4j 的绝大部分核心能力。\r\n\r\n**真正的问题是：目前项目还是一个\"单 Agent 生成前端代码\"的应用，产品形态不够丰富。** 虽然底层技术不浅，但给用户的感受是\"一个 AI 生成静态页面的工具\"。\r\n\r\n---\r\n\r\n## 下一步计划：从\"单 Agent 代码生成\"升级为\"多 Agent 全栈应用工厂\"\r\n\r\n建议分 **三个阶段** 推进，每个阶段都能独立交付价值：\r\n\r\n收到，方向明确。下面是完整的分阶段计划。\r\n\r\n---\r\n\r\n## 完整路线图：三阶段进化\r\n\r\n### 阶段一：Full-Stack 应用生成（短期，优先级最高）\r\n\r\n**目标：** 从\"生成前端页面\"升级为\"生成完整可运行的全栈应用\"。这是当前最有冲击力的能力提升。\r\n\r\n| 步骤 | 具体内容 | 涉及改动 |\r\n|---|---|---|\r\n| **1.1 后端代码生成 Prompt + Parser** | 新增 `codegen-springboot-system-prompt.txt`，指导 AI 生成 Spring Boot 项目结构（Controller / Service / Mapper / Entity / SQL） | 新增 `SpringBootCodeParser`、`SpringBootCodeFileSaver` |\r\n| **1.2 新增 Tool 工具** | 新增 `SqlExecutorTool`（测试 SQL 语句是否正确）、`MavenTool`（`mvn install` 编译后端代码） | 扩展 `ai/tools/` 下工具集 |\r\n| **1.3 新增生成类型 + 路由** | 在 `CodeGenTypeEnum` 中新增 `springboot` / `fullstack` 类型，路由模型能自动识别 | 修改 `AiCodeGenTypeRoutingService`、路由提示词 |\r\n| **1.4 FullStack 编排流程** | 先生成后端 → 生成前端（引用后端 API）→ 生成 Docker Compose 一键部署 → 输出完整项目目录 | 新增 `FullStackProjectBuilder`，扩展 `AppService` |\r\n| **1.5 部署能力扩展** | 支持 Docker 化部署（生成 `Dockerfile` + `docker-compose.yml`），提供预览 URL | 扩展部署逻辑 |\r\n\r\n**预期成果：** 用户输入\"生成一个带用户登录的商品管理系统\"，得到: Vue3 前端 + Spring Boot 后端 + MySQL Schema + Docker Compose，一个 `docker-compose up` 即可运行。\r\n\r\n---\r\n\r\n### 阶段二：多 Agent 协作系统（中期，核心差异化）\r\n\r\n**目标：** 将 LangGraph4j 工作流正式接入主业务流程，构建**多 Agent 开发团队**。\r\n\r\n```\r\n用户需求 → 产品经理Agent(需求细化) \r\n         → 架构师Agent(技术选型+模块设计) \r\n         → 前端Agent(实现前端) || 后端Agent(实现后端) \r\n         → 质检Agent(代码审查) → 通过 → 测试Agent(生成测试用例+运行)\r\n         → 部署Agent(Docker化+部署)\r\n         ↓ 审查不通过\r\n         返回对应Agent重新生成\r\n```\r\n\r\n| 步骤 | 具体内容 | 涉及改动 |\r\n|---|---|---|\r\n| **2.1 LangGraph4j 正式接入主流程** | 将现有 `CodeGenWorkflow` 集成到 `AppService.chatToGenCode()` 中，替换当前的直接 TokenStream 调用 | 修改 `AppServiceImpl`，将工作流作为可选增强模式 |\r\n| **2.2 质检 + 重试闭环** | 已有 `CodeQualityCheckNode`，现在将其与代码生成节点形成 **循环**（质检不通过最多重试 3 次，超过则降级） | 完善条件路由 + 重试逻辑 |\r\n| **2.3 新增 Agent 节点** | 逐一实现：`ArchitectNode`（设计架构）、`BackendCoderNode`（生成后端代码）、`TesterNode`（生成测试用例）、`DevOpsNode`（生成部署配置） | 新增 4 个 Node + 对应 AI Service 接口 |\r\n| **2.4 MCP 工具供给层** | 将现有 6 个文件操作工具（`FileWriteTool` 等）暴露为 MCP Server，通过 MCP 协议供给给 Agent。新增 MCP Tools：`GitCommandTool`、`SqlExecuteTool`、`DockerComposeTool` | 集成 `mcp-java-sdk`，实现 MCP Server 端 |\r\n| **2.5 并发 Agent 执行** | 复用已有的 `CodeGenConcurrentWorkflow`，对前端/后端/测试并行生成，由聚合节点合并 | 完善并发节点逻辑 |\r\n\r\n**预期成果：** 用户输入\"生成一个博客系统\"，系统经过架构设计→前后端并行编码→代码审查→测试→部署，自动输出一个经过质检的完整项目。\r\n\r\n---\r\n\r\n### 阶段三：交互式 Copilot 模式（长期，竞争力壁垒）\r\n\r\n**目标：** 从\"一次性生成\"变为\"对话式协作开发\"，类似 Cursor / Replit Agent 的模式。\r\n\r\n| 步骤 | 具体内容 | 涉及改动 |\r\n|---|---|---|\r\n| **3.1 项目级上下文管理** | 用户可以对同一个应用进行多轮对话修改代码，AI 读取当前项目目录结构 + 文件内容作为上下文 | 扩展现有 `ChatHistoryService`，增加项目快照管理 |\r\n| **3.2 交互式修改** | 用户选中/描述要修改的文件，AI 读取后生成修改方案，用户确认后再执行写入 | 新增 `chatToModify` API + 差异预览 UI 配合 |\r\n| **3.3 差异预览与回滚** | 每次修改保存修改前文件快照，支持 `git diff` 风格的差异查看和一键回滚 | 引入 JGit 做版本管理 |\r\n| **3.4 实时协作** | 多轮对话中，AI 能记住之前的架构决策，用户可以通过对话逐步完善需求 | 扩展 Memory 为项目级别持久化 |\r\n| **3.5 MCP Tool 市场** | 用户可以动态接入第三方 MCP Server（数据库查询、API 集成、云服务部署等），扩展 AI 能力边界 | 实现 MCP Client 端 + 动态 Tool 注册 |\r\n\r\n**预期成果：** 用户可以在对话中逐步构建应用——\"加一个用户管理模块\"→\"给商品列表加搜索功能\"→\"部署到服务器\"，无需离开聊天界面。\r\n\r\n---\r\n\r\n## 短期行动项（本周可启动）\r\n\r\n综合来看，**阶段一（Full-Stack 生成）+ 阶段二的第一步（LangGraph4j 集成）** 是当前投入产出比最高的方向。建议按此顺序推进：\r\n\r\n```\r\nWeek 1-2:  阶段一 1.1~1.3   后端代码生成 Prompt + Parser + 路由\r\nWeek 3-4:  阶段一 1.4~1.5   FullStack 编排 + Docker 部署\r\nWeek 5-6:  阶段二 2.1~2.2   LangGraph4j 接入主流程 + 质检重试闭环\r\nWeek 7-8:  阶段二 2.3~2.5   多 Agent 节点 + MCP 工具层\r\n```\r\n\r\n如果你确认这个方向，我可以帮你开始 **阶段一的第一个步骤**——编写 Spring Boot 后端代码生成的 System Prompt 和 Parser，或者先集成 LangGraph4j 工作流到主业务流程。你倾向于从哪个开始？\n--- End [已粘贴文本 #1 · 94 行] ---",
+  "scope": null,
+  "non_goals": null,
+  "allowed_operations": {
+    "write": true,
+    "network": false,
+    "publish": false
+  },
+  "success_criteria": [
+    {
+      "id": "objective_evidence",
+      "description": "The goal outcome is supported by direct evidence, such as inspected code, reproduced behavior, source material, or concrete findings.",
+      "required": true,
+      "evidence_ids": null
+    },
+    {
+      "id": "verification",
+      "description": "The result has relevant verification evidence, such as tests, commands, benchmarks, manual checks, or a documented reason why verification is not applicable.",
+      "required": true,
+      "evidence_ids": null
+    }
+  ]
+}

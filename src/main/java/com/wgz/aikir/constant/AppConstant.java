@@ -20,6 +20,12 @@ public interface AppConstant {
      */
     String CODE_OUTPUT_ROOT_DIR = System.getProperty("user.dir") + "/tmp/code_output";
 
+
+    /**
+     * 多媒体文件保存目录
+     */
+    String CODE_MULTI_MEDIA_DIR  = System.getProperty("user.dir") + "/tmp/multimedia";
+
     /**
      * 应用部署目录
      */

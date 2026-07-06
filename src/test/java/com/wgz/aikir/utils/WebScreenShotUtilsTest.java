@@ -13,7 +13,7 @@ class WebScreenShotUtilsTest {
 
     @Test
     void saveWebPageScreenshot() {
-        String testPath = "https://www..com";
+        String testPath = "https://www.baidu.com";
         String result = WebScreenShotUtils.saveWebPageScreenshot(testPath);
         Assertions.assertNotNull(result);
         log.info("截图保存路径：{}", result);

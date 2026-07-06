@@ -114,10 +114,11 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
             for (ChatHistory chatHistory : chatHistoryList) {
                 if (ChatHistoryMessageTypeEnum.USER.getValue().equals(chatHistory.getMessageType())){
                     chatMemory.add(UserMessage.from(chatHistory.getMessage()));
+                    loadedCount++;
                 } else if (ChatHistoryMessageTypeEnum.AI.getValue().equals(chatHistory.getMessageType())) {
                     chatMemory.add(AiMessage.from(chatHistory.getMessage()));
+                    loadedCount++;
                 }
-                loadedCount++;
             }
             log.info("成功为 appId: {} 加载 {} 条历史消息", appId, loadedCount);
             return loadedCount;

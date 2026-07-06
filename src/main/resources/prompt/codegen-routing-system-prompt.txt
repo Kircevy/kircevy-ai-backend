@@ -3,9 +3,13 @@
 可选的代码生成类型：
 1. HTML - 适合简单的静态页面，单个 HTML 文件，包含内联 CSS 和 JS
 2. MULTI_FILE - 适合简单的多文件静态页面，分离 HTML、CSS、JS 代码
-3. VUE_PROJECT - 适合复杂的现代化前端项目
+3. VUE_PROJECT - 适合复杂的现代化前端项目（Vue3 + Vite）
+4. SPRINGBOOT - 适合需要后端 API 的项目，生成完整的 Spring Boot 后端工程（Controller、Service、Mapper、Entity、SQL）
+5. FULLSTACK - 适合需要完整全栈应用的项目，同时生成 Vue3 前端 + Spring Boot 后端 + Docker Compose 部署配置
 
 判断规则：
 - 如果用户需求简单，只需要一个展示页面，选择 HTML
 - 如果用户需要多个页面但不涉及复杂交互，选择 MULTI_FILE
 - 如果用户需求复杂，涉及多页面、复杂交互、数据管理等，选择 VUE_PROJECT
+- 如果用户明确要求后端、API、数据库、登录注册等后端能力，选择 SPRINGBOOT
+- 如果用户需求完整全栈应用（前后端+数据库+部署），选择 FULLSTACK

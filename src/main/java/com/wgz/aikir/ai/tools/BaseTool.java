@@ -1,11 +1,17 @@
 package com.wgz.aikir.ai.tools;
 
 import cn.hutool.json.JSONObject;
+import com.wgz.aikir.constant.AppConstant;
+import com.wgz.aikir.model.enums.CodeGenTypeEnum;
+import com.wgz.aikir.service.AppService;
+import com.wgz.aikir.utils.SpringContextUtil;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 工具基类
  * 定义所有工具的通用接口
  */
+@Slf4j
 public abstract class BaseTool {
 
     /**
@@ -38,4 +44,39 @@ public abstract class BaseTool {
      * @return 格式化的工具执行结果
      */
     public abstract String generateToolExecutedResult(JSONObject arguments);
+
+    /**
+     * 根据 appId 动态获取项目目录名
+     * 支持多种项目类型：vue_project, springboot, fullstack 等
+     *
+     * @param appId 应用 ID
+     * @return 项目目录名称（如 "vue_project_123"）
+     */
+    protected String getProjectDirName(Long appId) {
+        try {
+            AppService appService = SpringContextUtil.getBean(AppService.class);
+            var app = appService.getById(appId);
+            if (app != null && app.getCodeGenType() != null) {
+                String codeGenType = app.getCodeGenType();
+                CodeGenTypeEnum typeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+                if (typeEnum != null) {
+                    return typeEnum.getValue() + "_" + appId;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查询应用类型失败，使用默认 vue_project 前缀: {}", e.getMessage());
+        }
+        // 默认兼容旧数据
+        return "vue_project_" + appId;
+    }
+
+    /**
+     * 获取项目根目录路径
+     *
+     * @param appId 应用 ID
+     * @return 项目根目录路径字符串
+     */
+    protected String getProjectRootPath(Long appId) {
+        return AppConstant.CODE_OUTPUT_ROOT_DIR + "/" + getProjectDirName(appId);
+    }
 }

@@ -98,14 +98,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
         // 6. 设置监控上下文（埋点）
         MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
-        // 6. 调用 AI 生成代码（流式）
+        // 7. 调用 AI 生成代码（流式）
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
-        // 7. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
+        // 8. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
                 .doFinally(s -> {
                             // 8. 清理监控上下文
                             MonitorContextHolder.clearContext();
-                        });
+                         });
     }
 
     @Override

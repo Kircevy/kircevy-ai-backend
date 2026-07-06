@@ -27,12 +27,12 @@ public class FileWriteTool extends BaseTool {
             @P("文件的相对路径") String relativeFilePath,
             @P("要写入文件的内容") String content,
             @ToolMemoryId Long appId
-    ) {   // c:/xxx/xx/tmp/code_output/vue_project/1/index.vue
+    ) {
         try {
             Path path = Paths.get(relativeFilePath);
             if (!path.isAbsolute()){
-                // 相对路径处理，创建基于appId的项目目录
-                String projectDirName = "vue_project_" + appId;
+                // 动态获取项目类型前缀，支持多种项目类型（vue_project / springboot / fullstack 等）
+                String projectDirName = getProjectDirName(appId);
                 Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
                 path = projectRoot.resolve(relativeFilePath);
             }

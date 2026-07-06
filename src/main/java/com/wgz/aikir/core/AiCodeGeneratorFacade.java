@@ -91,7 +91,11 @@ public class AiCodeGeneratorFacade {
             }
             case VUE_PROJECT -> {
                 TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
-                yield processTokenStream(tokenStream, appId);
+                yield processTokenStream(tokenStream, appId, codeGenTypeEnum);
+            }
+            case SPRINGBOOT -> {
+                TokenStream tokenStream = aiCodeGeneratorService.generateSpringBootCodeStream(appId, userMessage);
+                yield processTokenStream(tokenStream, appId, codeGenTypeEnum);
             }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
@@ -134,8 +138,10 @@ public class AiCodeGeneratorFacade {
    /**
      * 将TokenStream流转换为Flux<String>流
      * @param tokenStream token 流
+     * @param codeGenTypeEnum 代码生成类型
      * @return 流式响应
-     */ private Flux<String> processTokenStream(TokenStream tokenStream, Long appId){
+     */
+   private Flux<String> processTokenStream(TokenStream tokenStream, Long appId, CodeGenTypeEnum codeGenTypeEnum){
         return Flux.create(sink -> {
             tokenStream.onPartialResponse((String partialResponse) -> {
                 AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
@@ -147,9 +153,16 @@ public class AiCodeGeneratorFacade {
                 ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
                 sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
             }).onCompleteResponse((ChatResponse response) -> {
-                // 执行vue项目构建 （同步执行，确保预览时项目已就绪）
-                String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appId;
-                vueProjectBuilder.buildProject(projectPath);
+                // 根据生成类型执行后处理
+                String projectDirName = codeGenTypeEnum.getValue() + "_" + appId;
+                String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + projectDirName;
+                if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+                    // Vue 项目需要执行 npm install + build
+                    vueProjectBuilder.buildProject(projectPath);
+                } else if (codeGenTypeEnum == CodeGenTypeEnum.SPRINGBOOT) {
+                    log.info("Spring Boot 项目生成完成，项目路径: {}", projectPath);
+                    // Spring Boot 项目不需要自动构建，由 MavenTool 在生成过程中按需调用
+                }
                 sink.complete();
             }).onError((Throwable error) -> {
                 error.printStackTrace();

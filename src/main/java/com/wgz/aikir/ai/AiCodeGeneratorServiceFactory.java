@@ -3,6 +3,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.wgz.aikir.ai.guardrail.PromptSafetyInputGuardrail;
 import com.wgz.aikir.ai.tools.*;
+import com.wgz.aikir.config.RedisChatMemoryStoreConfig;
 import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
@@ -29,7 +30,6 @@ public class AiCodeGeneratorServiceFactory{
 
     @Resource(name = "openAiChatModel")
     private ChatModel chatModel;
-
 
     @Resource
     private RedisChatMemoryStore redisChatMemoryStore;
@@ -78,7 +78,7 @@ public class AiCodeGeneratorServiceFactory{
         // 在创建AI服务时，直接从数据库中加载对话历史
         chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
         return switch (genTypeEnum) {
-            case VUE_PROJECT -> {
+            case VUE_PROJECT, SPRINGBOOT -> {
                 StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
                 yield AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
