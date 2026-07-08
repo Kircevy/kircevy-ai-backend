@@ -64,10 +64,10 @@ public abstract class BaseTool {
                 }
             }
         } catch (Exception e) {
-            log.warn("查询应用类型失败，使用默认 vue_project 前缀: {}", e.getMessage());
+            log.warn("查询应用类型失败，使用默认 code_output 前缀: {}", e.getMessage());
         }
-        // 默认兼容旧数据
-        return "vue_project_" + appId;
+        // 默认回退：使用通用前缀，避免 FULLSTACK/SPRINGBOOT 写错目录
+        return "code_output_" + appId;
     }
 
     /**

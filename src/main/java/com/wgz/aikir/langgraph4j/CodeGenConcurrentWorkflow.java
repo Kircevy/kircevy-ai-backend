@@ -84,11 +84,14 @@ public class CodeGenConcurrentWorkflow {
 
     /**
      * 执行并发工作流
+     * @param originalPrompt 原始提示词
+     * @param appId 应用ID
      */
-    public WorkflowContext executeWorkflow(String originalPrompt) {
+    public WorkflowContext executeWorkflow(String originalPrompt, Long appId) {
         CompiledGraph<MessagesState<String>> workflow = createWorkflow();
         WorkflowContext initialContext = WorkflowContext.builder()
                 .originalPrompt(originalPrompt)
+                .appId(appId)
                 .currentStep("初始化")
                 .build();
         GraphRepresentation graph = workflow.getGraph(GraphRepresentation.Type.MERMAID);
@@ -134,10 +137,11 @@ public class CodeGenConcurrentWorkflow {
         }
         log.info("代码质检通过，继续后续流程");
         CodeGenTypeEnum generationType = context.getGenerationType();
-        if (generationType == CodeGenTypeEnum.VUE_PROJECT) {
-            return "build";
-        } else {
+        // HTML 和 MULTI_FILE 不需要构建
+        if (generationType == CodeGenTypeEnum.HTML || generationType == CodeGenTypeEnum.MULTI_FILE) {
             return "skip_build";
         }
+        // VUE_PROJECT、SPRINGBOOT、FULLSTACK 需要构建
+        return "build";
     }
 }

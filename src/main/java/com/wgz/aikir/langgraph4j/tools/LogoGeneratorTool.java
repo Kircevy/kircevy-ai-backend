@@ -48,7 +48,7 @@ public class LogoGeneratorTool {
                     if (StrUtil.isNotBlank(imageUrl)) {
                         logoList.add(ImageResource.builder()
                                 .category(ImageCategoryEnum.LOGO)
-                                .description(description)
+                                .description(StrUtil.maxLength(description, 25))
                                 .url(imageUrl)
                                 .build());
                     }

@@ -122,7 +122,16 @@ public class VueProjectBuilder {
                 log.info("命令执行成功: {}", command);
                 return true;
             } else {
-                log.error("命令执行失败，退出码: {}", exitCode);
+                // 捕获错误输出用于调试
+                String errorOutput = new String(process.getErrorStream().readAllBytes());
+                String stdOutput = new String(process.getInputStream().readAllBytes());
+                log.error("命令执行失败（退出码: {}），命令: {}", exitCode, command);
+                if (!errorOutput.isBlank()) {
+                    log.error("stderr: {}", errorOutput.length() > 2000 ? errorOutput.substring(0, 2000) + "...(truncated)" : errorOutput);
+                }
+                if (!stdOutput.isBlank()) {
+                    log.error("stdout: {}", stdOutput.length() > 2000 ? stdOutput.substring(0, 2000) + "...(truncated)" : stdOutput);
+                }
                 return false;
             }
         } catch (Exception e) {

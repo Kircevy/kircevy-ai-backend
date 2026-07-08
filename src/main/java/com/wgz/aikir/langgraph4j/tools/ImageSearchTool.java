@@ -1,5 +1,6 @@
 package com.wgz.aikir.langgraph4j.tools;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONArray;
@@ -44,7 +45,7 @@ public class ImageSearchTool {
                     JSONObject src = photo.getJSONObject("src");
                     imageList.add(ImageResource.builder()
                             .category(ImageCategoryEnum.CONTENT)
-                            .description(photo.getStr("alt", query))
+                            .description(StrUtil.maxLength(photo.getStr("alt", query), 25))
                             .url(src.getStr("medium"))
                             .build());
                 }

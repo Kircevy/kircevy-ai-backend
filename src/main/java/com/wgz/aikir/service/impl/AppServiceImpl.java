@@ -10,6 +10,7 @@ import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.AiCodeGeneratorFacade;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
+import com.wgz.aikir.core.builder.FullStackProjectBuilder;
 import com.wgz.aikir.core.handler.StreamHandlerExecutor;
 import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
@@ -71,6 +72,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
+    private FullStackProjectBuilder fullStackProjectBuilder;
 
     @Resource
     private ScreenShotService screenShotService;
@@ -135,14 +139,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码路径不存在，请先生成应用");
         }
-        // 7. 判断是否为vue项目，是的话要进行构建部署
-        if (codeGenType.equals(CodeGenTypeEnum.VUE_PROJECT.getValue())){
-            // 构建项目
+        // 7. 根据项目类型进行构建部署
+        if (codeGenType.equals(CodeGenTypeEnum.VUE_PROJECT.getValue())) {
+            // Vue 项目：构建并部署前端 dist
             boolean buildSuccess = vueProjectBuilder.buildProject(sourceDirPath);
             ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "应用构建失败");
             File distDir = new File(sourceDirPath, "dist");
             ThrowUtils.throwIf(!distDir.exists() || !distDir.isDirectory(), ErrorCode.SYSTEM_ERROR, "应用构建成功，但dist目录不存在");
             sourceDir = distDir;
+        } else if (codeGenType.equals(CodeGenTypeEnum.FULLSTACK.getValue())) {
+            // 全栈项目：构建前端并部署前端 dist，后端需通过 docker-compose 单独部署
+            boolean buildSuccess = fullStackProjectBuilder.buildProject(sourceDirPath);
+            ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "全栈项目前端构建失败");
+            File frontendDistDir = new File(sourceDirPath, "frontend/dist");
+            ThrowUtils.throwIf(!frontendDistDir.exists() || !frontendDistDir.isDirectory(),
+                    ErrorCode.SYSTEM_ERROR, "全栈项目前端构建成功，但 dist 目录不存在");
+            sourceDir = frontendDistDir;
+            log.info("全栈项目前端部署完成，后端服务需通过 docker-compose 单独启动，项目路径: {}", sourceDirPath);
         }
         // 8. 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;

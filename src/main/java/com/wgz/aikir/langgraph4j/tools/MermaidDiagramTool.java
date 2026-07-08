@@ -46,7 +46,7 @@ public class MermaidDiagramTool {
             if (StrUtil.isNotBlank(cosUrl)) {
                 return Collections.singletonList(ImageResource.builder()
                         .category(ImageCategoryEnum.ARCHITECTURE)
-                        .description(description)
+                        .description(StrUtil.maxLength(description, 25))
                         .url(cosUrl)
                         .build());
             }

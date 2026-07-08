@@ -10,6 +10,7 @@ import com.wgz.aikir.ai.model.message.ToolExecutedMessage;
 import com.wgz.aikir.ai.model.message.ToolRequestMessage;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
+import com.wgz.aikir.core.builder.FullStackProjectBuilder;
 import com.wgz.aikir.core.parser.CodeParserExecutor;
 import com.wgz.aikir.core.saver.CodeFileSaverExecutor;
 import com.wgz.aikir.exception.BusinessException;
@@ -38,6 +39,9 @@ public class AiCodeGeneratorFacade {
     @Resource
     private VueProjectBuilder vueProjectBuilder;
 
+    @Resource
+    private FullStackProjectBuilder fullStackProjectBuilder;
+
     /**
      * 统一入口：根据类型生成并保存代码
      *
@@ -59,6 +63,22 @@ public class AiCodeGeneratorFacade {
             case MULTI_FILE -> {
                 MultiFileCodeResult result = aiCodeGeneratorService.generateMultiFileCode(userMessage);
                 yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.MULTI_FILE, appId);
+            }
+            case VUE_PROJECT, SPRINGBOOT, FULLSTACK -> {
+                // 复杂类型通过工具调用写文件，阻塞等待 TokenStream 完成后返回项目目录
+                TokenStream tokenStream = switch (codeGenTypeEnum) {
+                    case VUE_PROJECT -> aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
+                    case SPRINGBOOT -> aiCodeGeneratorService.generateSpringBootCodeStream(appId, userMessage);
+                    case FULLSTACK -> aiCodeGeneratorService.generateFullStackCodeStream(appId, userMessage);
+                    default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的类型");
+                };
+                java.util.concurrent.CompletableFuture<Void> future = new java.util.concurrent.CompletableFuture<>();
+                tokenStream.onCompleteResponse(r -> future.complete(null))
+                           .onError(future::completeExceptionally)
+                           .start();
+                future.join();
+                String projectDirName = codeGenTypeEnum.getValue() + "_" + appId;
+                yield new File(AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + projectDirName);
             }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
@@ -95,6 +115,10 @@ public class AiCodeGeneratorFacade {
             }
             case SPRINGBOOT -> {
                 TokenStream tokenStream = aiCodeGeneratorService.generateSpringBootCodeStream(appId, userMessage);
+                yield processTokenStream(tokenStream, appId, codeGenTypeEnum);
+            }
+            case FULLSTACK -> {
+                TokenStream tokenStream = aiCodeGeneratorService.generateFullStackCodeStream(appId, userMessage);
                 yield processTokenStream(tokenStream, appId, codeGenTypeEnum);
             }
             default -> {
@@ -158,10 +182,21 @@ public class AiCodeGeneratorFacade {
                 String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + projectDirName;
                 if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
                     // Vue 项目需要执行 npm install + build
-                    vueProjectBuilder.buildProject(projectPath);
+                    boolean buildSuccess = vueProjectBuilder.buildProject(projectPath);
+                    if (!buildSuccess) {
+                        log.error("Vue 项目构建失败，路径: {}", projectPath);
+                        sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] Vue 项目构建失败，请检查生成的代码")));
+                    }
                 } else if (codeGenTypeEnum == CodeGenTypeEnum.SPRINGBOOT) {
                     log.info("Spring Boot 项目生成完成，项目路径: {}", projectPath);
                     // Spring Boot 项目不需要自动构建，由 MavenTool 在生成过程中按需调用
+                } else if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
+                    // 全栈项目：校验目录结构 + 后端编译 + 前端构建
+                    boolean buildSuccess = fullStackProjectBuilder.buildProject(projectPath);
+                    if (!buildSuccess) {
+                        log.error("全栈项目构建失败，路径: {}", projectPath);
+                        sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] 全栈项目构建失败，请检查生成的代码")));
+                    }
                 }
                 sink.complete();
             }).onError((Throwable error) -> {

@@ -46,4 +46,18 @@ class AiCodeGeneratorFacadeTest {
         String completeContent = String.join("", result);
         Assertions.assertNotNull(completeContent);
     }
+
+    @Test
+    void generateFullStackCodeStream() {
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(
+                "生成一个商品管理系统全栈应用：后端支持商品CRUD（增删改查）和分类管理，包含数据库初始化SQL；前端展示商品列表、添加商品页面，分类导航。要求项目结构完整可运行",
+                CodeGenTypeEnum.FULLSTACK, 1L);
+        // 阻塞等待所有数据收集完成
+        List<String> result = codeStream.collectList().block();
+        // 验证结果
+        Assertions.assertNotNull(result);
+        Assertions.assertTrue(result.size() > 0);
+        System.out.println("全栈项目流式消息数量: " + result.size());
+        System.out.println("请在 tmp/code_output/fullstack_1/ 目录下查看生成的文件");
+    }
 }

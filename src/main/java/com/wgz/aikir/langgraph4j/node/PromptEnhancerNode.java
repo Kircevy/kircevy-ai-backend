@@ -8,7 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.bsc.langgraph4j.action.AsyncNodeAction;
 import org.bsc.langgraph4j.prebuilt.MessagesState;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
 
@@ -24,18 +25,26 @@ public class PromptEnhancerNode {
             StringBuilder enhancerPrompt = new StringBuilder();
             enhancerPrompt.append(originalPrompt);
             if (CollUtil.isNotEmpty(imageList) || StrUtil.isNotBlank(imageListStr)){
-                enhancerPrompt.append("\n\n## 可用的图片资源");
-                enhancerPrompt.append("请在生成网站使用一下图片资源，将这些图片合理地嵌入到网赚的相应为值中。\n");
+                enhancerPrompt.append("\n\n## 图片\n");
                 if (CollUtil.isNotEmpty(imageList)){
-                    for (ImageResource image : imageList) {
-                        enhancerPrompt.append(image.getCategory().getText())
-                                .append("：")
-                                .append(image.getDescription())
-                                .append("（")
-                                .append(image.getUrl())
-                                .append("）\n");
+                    // 按类别分组，避免重复类别名
+                    Map<String, List<ImageResource>> grouped = imageList.stream()
+                            .collect(Collectors.groupingBy(
+                                    img -> img.getCategory() != null ? img.getCategory().getText() : "其他",
+                                    LinkedHashMap::new,
+                                    Collectors.toList()
+                            ));
+                    for (Map.Entry<String, List<ImageResource>> entry : grouped.entrySet()) {
+                        enhancerPrompt.append("[").append(entry.getKey()).append("]\n");
+                        for (ImageResource image : entry.getValue()) {
+                            // 紧凑格式：描述|URL
+                            String desc = StrUtil.maxLength(image.getDescription(), 40);
+                            enhancerPrompt.append("  ").append(desc)
+                                    .append("|").append(image.getUrl()).append("\n");
+                        }
                     }
                 } else {
+                    // imageListStr 已是外部传入的文本，直接追加
                     enhancerPrompt.append(imageListStr);
                 }
             }

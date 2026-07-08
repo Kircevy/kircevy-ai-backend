@@ -31,6 +31,11 @@ public class WorkflowContext implements Serializable {
     public static final String WORKFLOW_CONTEXT_KEY = "workflowContext";
 
     /**
+     * 应用ID - 用于关联业务系统中的应用
+     */
+    private Long appId;
+
+    /**
      * 当前执行步骤
      */
     private String currentStep;

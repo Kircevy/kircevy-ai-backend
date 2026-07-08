@@ -42,14 +42,16 @@ public class CodeGenWorkflow {
                     .addEdge("image_collector", "prompt_enhancer")
                     .addEdge("prompt_enhancer", "router")
                     .addEdge("router", "code_generator")
-                    // 使用条件边：根据代码生成类型决定是否需要构建
-                    //            通过质检判断是否需要重新生成代码
-                    .addConditionalEdges("code_generator",
+                    // 代码生成后进入质检节点
+                    .addEdge("code_generator", "code_quality_check")
+
+                    // 使用条件边：根据质检结果决定是否需要构建或重新生成
+                    .addConditionalEdges("code_quality_check",
                             edge_async(this::routeAfterQualityCheck),
                             Map.of(
                                     "build", "project_builder",  // 需要构建的情况
-                                        "skip_build", END,              // 跳过构建直接结束
-                                        "fail", "code_generator"        //质检失败，重新生成
+                                    "skip_build", END,            // 跳过构建直接结束
+                                    "fail", "code_generator"      // 质检失败，重新生成
                             ))
                     .addEdge("project_builder", END)
 
@@ -81,20 +83,23 @@ public class CodeGenWorkflow {
         if (generationType == CodeGenTypeEnum.HTML || generationType == CodeGenTypeEnum.MULTI_FILE) {
             return "skip_build";
         }
-        // VUE_PROJECT 需要构建
+        // VUE_PROJECT、SPRINGBOOT、FULLSTACK 需要构建（由各自的 Builder 处理）
         return "build";
     }
 
 
     /**
      * 执行工作流
+     * @param originalPrompt 原始提示词
+     * @param appId 应用ID
      */
-    public WorkflowContext executeWorkflow(String originalPrompt) {
+    public WorkflowContext executeWorkflow(String originalPrompt, Long appId) {
         CompiledGraph<MessagesState<String>> workflow = createWorkflow();
 
         // 初始化 WorkflowContext
         WorkflowContext initialContext = WorkflowContext.builder()
                 .originalPrompt(originalPrompt)
+                .appId(appId)
                 .currentStep("初始化")
                 .build();
 

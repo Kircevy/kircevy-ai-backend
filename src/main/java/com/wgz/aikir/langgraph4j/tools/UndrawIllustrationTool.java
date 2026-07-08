@@ -50,7 +50,7 @@ public class UndrawIllustrationTool {
                 if (StrUtil.isNotBlank(media)) {
                     imageList.add(ImageResource.builder()
                             .category(ImageCategoryEnum.ILLUSTRATION)
-                            .description(title)
+                            .description(StrUtil.maxLength(title, 25))
                             .url(media)
                             .build());
                 }
