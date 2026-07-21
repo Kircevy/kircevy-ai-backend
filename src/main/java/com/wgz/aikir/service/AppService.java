@@ -5,6 +5,7 @@ import com.mybatisflex.core.service.IService;
 import com.wgz.aikir.model.dto.app.AppQueryRequest;
 import com.wgz.aikir.model.entity.App;
 import com.wgz.aikir.model.entity.User;
+import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
 import reactor.core.publisher.Flux;
 
@@ -27,13 +28,23 @@ public interface AppService extends IService<App> {
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
 
     /**
-     * 应用部署
+     * 应用部署（默认代码下载模式，兼容旧接口）
      *
      * @param appId 应用 ID
      * @param loginUser 登录用户
-     * @return 可访问的部署地址
+     * @return 可访问的部署地址或下载提示
      */
     String deployApp(Long appId, User loginUser);
+
+    /**
+     * 应用部署（按部署模式分发）
+     *
+     * @param appId      应用 ID
+     * @param deployMode 部署模式（CODE_DOWNLOAD / DOCKER_COMPOSE）
+     * @param loginUser  登录用户
+     * @return 可访问的部署地址或下载提示
+     */
+    String deployApp(Long appId, DeployModeEnum deployMode, User loginUser);
 
     /**
      * 异步生成应用截图并入库

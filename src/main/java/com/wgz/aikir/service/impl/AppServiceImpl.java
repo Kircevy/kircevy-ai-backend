@@ -21,12 +21,14 @@ import com.wgz.aikir.mapper.AppMapper;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
+import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
 import com.wgz.aikir.model.vo.UserVO;
 import com.wgz.aikir.monitor.MonitorContext;
 import com.wgz.aikir.monitor.MonitorContextHolder;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.service.ChatHistoryService;
+import com.wgz.aikir.service.DockerComposeDeployService;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
@@ -77,6 +79,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private FullStackProjectBuilder fullStackProjectBuilder;
 
     @Resource
+    private DockerComposeDeployService dockerComposeDeployService;
+
+    @Resource
     private ScreenShotService screenShotService;
 
 
@@ -114,9 +119,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Override
     public String deployApp(Long appId, User loginUser) {
+        // 兼容旧接口，默认代码下载模式
+        return deployApp(appId, DeployModeEnum.CODE_DOWNLOAD, loginUser);
+    }
+
+    @Override
+    public String deployApp(Long appId, DeployModeEnum deployMode, User loginUser) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 错误");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
+        ThrowUtils.throwIf(deployMode == null, ErrorCode.PARAMS_ERROR, "部署模式不能为空");
         // 2. 查询应用信息
         App app = this.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
@@ -139,7 +151,21 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码路径不存在，请先生成应用");
         }
-        // 7. 根据项目类型进行构建部署
+        // 7. 按部署模式分发
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        if (deployMode == DeployModeEnum.DOCKER_COMPOSE) {
+            return deployWithDockerCompose(appId, deployKey, sourceDirPath, codeGenTypeEnum);
+        }
+        // 默认代码下载模式：构建并部署静态资源（前端预览）
+        return deployWithCodeDownload(appId, deployKey, sourceDir, sourceDirPath, codeGenType);
+    }
+
+    /**
+     * 代码下载模式部署：构建前端静态资源并部署到预览目录，同时提供完整源码下载
+     */
+    private String deployWithCodeDownload(Long appId, String deployKey, File sourceDir,
+                                          String sourceDirPath, String codeGenType) {
+        // 根据项目类型进行构建部署
         if (codeGenType.equals(CodeGenTypeEnum.VUE_PROJECT.getValue())) {
             // Vue 项目：构建并部署前端 dist
             boolean buildSuccess = vueProjectBuilder.buildProject(sourceDirPath);
@@ -148,34 +174,62 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             ThrowUtils.throwIf(!distDir.exists() || !distDir.isDirectory(), ErrorCode.SYSTEM_ERROR, "应用构建成功，但dist目录不存在");
             sourceDir = distDir;
         } else if (codeGenType.equals(CodeGenTypeEnum.FULLSTACK.getValue())) {
-            // 全栈项目：构建前端并部署前端 dist，后端需通过 docker-compose 单独部署
+            // 全栈项目：构建前端并部署前端 dist（代码下载模式下，后端源码随 zip 下载，用户本地运行）
             boolean buildSuccess = fullStackProjectBuilder.buildProject(sourceDirPath);
             ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "全栈项目前端构建失败");
             File frontendDistDir = new File(sourceDirPath, "frontend/dist");
             ThrowUtils.throwIf(!frontendDistDir.exists() || !frontendDistDir.isDirectory(),
                     ErrorCode.SYSTEM_ERROR, "全栈项目前端构建成功，但 dist 目录不存在");
             sourceDir = frontendDistDir;
-            log.info("全栈项目前端部署完成，后端服务需通过 docker-compose 单独启动，项目路径: {}", sourceDirPath);
+            log.info("全栈项目前端部署完成（代码下载模式），完整源码可通过 /app/download 下载，项目路径: {}", sourceDirPath);
         }
-        // 8. 复制文件到部署目录
+        // 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
         try {
             FileUtil.copyContent(sourceDir, new File(deployDirPath), true);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用部署失败：" + e.getMessage());
         }
-        // 9. 更新数据库
+        // 更新数据库
         App updateApp = new App();
         updateApp.setId(appId);
         updateApp.setDeployKey(deployKey);
         updateApp.setDeployedTime(LocalDateTime.now());
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
-        // 10. 返回可访问的 URL 地址
+        // 返回可访问的 URL 地址
         String appDeployUrl = String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
-        // 11. 调用截图方法并更新数据库
+        // 调用截图方法并更新数据库
         this.generateScreenShotAsync(appId, appDeployUrl);
         return appDeployUrl;
+    }
+
+    /**
+     * Docker 一键部署模式：执行 docker-compose up -d，返回前端访问地址
+     * 仅支持 FULLSTACK 类型（包含 docker-compose.yml）
+     */
+    private String deployWithDockerCompose(Long appId, String deployKey,
+                                           String sourceDirPath, CodeGenTypeEnum codeGenTypeEnum) {
+        // Docker 部署仅支持全栈项目
+        ThrowUtils.throwIf(codeGenTypeEnum != CodeGenTypeEnum.FULLSTACK,
+                ErrorCode.PARAMS_ERROR, "Docker 一键部署仅支持全栈项目（FULLSTACK）类型");
+        // 执行 Docker Compose 部署
+        DockerComposeDeployService.DockerDeployResult result = dockerComposeDeployService.deploy(sourceDirPath, deployKey);
+        if (!result.isSuccess()) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Docker 部署失败：" + result.getErrorMessage());
+        }
+        // 更新数据库：记录 docker 部署地址
+        App updateApp = new App();
+        updateApp.setId(appId);
+        updateApp.setDeployKey(deployKey);
+        updateApp.setDeployedTime(LocalDateTime.now());
+        updateApp.setDockerDeployUrl(result.getFrontendUrl());
+        boolean updateResult = this.updateById(updateApp);
+        ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
+        // 调用截图方法并更新数据库（截取前端页面）
+        this.generateScreenShotAsync(appId, result.getFrontendUrl());
+        log.info("Docker 一键部署成功，前端: {}，后端: {}", result.getFrontendUrl(), result.getBackendUrl());
+        return result.getFrontendUrl();
     }
 
     /**

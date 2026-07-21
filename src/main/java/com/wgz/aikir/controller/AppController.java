@@ -18,6 +18,7 @@ import com.wgz.aikir.exception.ThrowUtils;
 import com.wgz.aikir.model.dto.app.*;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
+import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
 import com.wgz.aikir.rateLimiter.annotation.RateLimit;
 import com.wgz.aikir.rateLimiter.enums.RateLimitType;
@@ -127,9 +128,9 @@ public class AppController {
     }
 
     /**
-     * 应用部署
+     * 应用部署（支持代码下载 / Docker 一键部署两种模式）
      *
-     * @param appDeployRequest 部署请求
+     * @param appDeployRequest 部署请求（appId + deployMode）
      * @param request          请求
      * @return 部署 URL
      */
@@ -141,10 +142,16 @@ public class AppController {
         Long appId = appDeployRequest.getAppId();
         // 检查应用 ID 是否为空
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+        // 解析部署模式（为空默认代码下载模式）
+        String deployModeValue = appDeployRequest.getDeployMode();
+        DeployModeEnum deployMode = StrUtil.isBlank(deployModeValue)
+                ? DeployModeEnum.CODE_DOWNLOAD
+                : DeployModeEnum.getEnumByValue(deployModeValue);
+        ThrowUtils.throwIf(deployMode == null, ErrorCode.PARAMS_ERROR, "不支持的部署模式");
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
         // 调用服务部署应用
-        String deployUrl = appService.deployApp(appId, loginUser);
+        String deployUrl = appService.deployApp(appId, deployMode, loginUser);
         // 返回部署 URL
         return ResultUtils.success(deployUrl);
     }
