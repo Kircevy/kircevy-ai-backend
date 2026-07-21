@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 
+import java.time.Duration;
 import java.util.List;
 
 @Configuration
@@ -30,6 +31,8 @@ public class StreamingChatModelConfig {
 
     private Double temperature;
 
+    private Duration timeout;
+
     private boolean logRequests;
 
     private boolean logResponses;
@@ -37,7 +40,7 @@ public class StreamingChatModelConfig {
     @Bean
     @Scope("prototype")
     public StreamingChatModel streamingChatModelPrototype() {
-        return OpenAiStreamingChatModel.builder()
+        OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder = OpenAiStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
@@ -45,7 +48,10 @@ public class StreamingChatModelConfig {
                 .temperature(temperature)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
-                .listeners(List.of(aiModelMonitorListener))
-                .build();
+                .listeners(List.of(aiModelMonitorListener));
+        if (timeout != null) {
+            builder.timeout(timeout);
+        }
+        return builder.build();
     }
 }

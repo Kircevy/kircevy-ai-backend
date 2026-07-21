@@ -58,36 +58,36 @@ public class GlobalExceptionHandler {
         // 判断是否是SSE请求（通过Accept头或URL路径）
         String accept = request.getHeader("Accept");
         String uri = request.getRequestURI();
-        if ((accept != null && accept.contains("text/event-stream")) ||
-                uri.contains("/chat/gen/code")) {
-            try {
-                // 设置SSE响应头
-                response.setContentType("text/event-stream");
-                response.setCharacterEncoding("UTF-8");
-                response.setHeader("Cache-Control", "no-cache");
-                response.setHeader("Connection", "keep-alive");
-                // 构造错误消息的SSE格式
-                Map<String, Object> errorData = Map.of(
-                        "error", true,
-                        "code", errorCode,
-                        "message", errorMessage
-                );
-                String errorJson = JSONUtil.toJsonStr(errorData);
-                // 发送业务错误事件（避免与标准error事件冲突）
-                String sseData = "event: business-error\ndata: " + errorJson + "\n\n";
-                response.getWriter().write(sseData);
-                response.getWriter().flush();
-                // 发送结束事件
-                response.getWriter().write("event: done\ndata: {}\n\n");
-                response.getWriter().flush();
-                // 表示已处理SSE请求
-                return true;
-            } catch (IOException ioException) {
-                log.error("Failed to write SSE error response", ioException);
-                // 即使写入失败，也表示这是SSE请求
-                return true;
-            }
+        boolean isSse = (accept != null && accept.contains("text/event-stream"))
+                || uri.contains("/chat/gen/code");
+        if (!isSse) {
+            return false;
         }
-        return false;
+        // SSE 响应已由 Flux 框架占用 output stream，不能再写入
+        if (response.isCommitted()) {
+            log.warn("SSE 响应已提交，无法写入错误信息");
+            return true;
+        }
+        try {
+            response.setContentType("text/event-stream");
+            response.setCharacterEncoding("UTF-8");
+            response.setHeader("Cache-Control", "no-cache");
+            response.setHeader("Connection", "keep-alive");
+            Map<String, Object> errorData = Map.of(
+                    "error", true,
+                    "code", errorCode,
+                    "message", errorMessage
+            );
+            String errorJson = JSONUtil.toJsonStr(errorData);
+            String ssePayload = "event: business-error\ndata: " + errorJson + "\n\nevent: done\ndata: {}\n\n";
+            // 使用 getOutputStream 而非 getWriter，避免与 SSE 框架冲突
+            jakarta.servlet.ServletOutputStream out = response.getOutputStream();
+            out.write(ssePayload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+            return true;
+        } catch (Exception e) {
+            log.warn("写入 SSE 错误响应失败: {}", e.getMessage());
+            return true;
+        }
     }
 }

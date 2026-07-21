@@ -68,15 +68,21 @@ public class AiCodeGeneratorServiceFactory{
     }
 
     private AiCodeGeneratorService createAiCodeGeneratorService(long appId, CodeGenTypeEnum genTypeEnum){
-        log.info("为appId：{}，创建新的 AI 实例", appId);
+        log.info("为appId：{}，创建新的 AI 实例，类型：{}", appId, genTypeEnum);
+        // 根据类型计算 ChatMemory 窗口大小：每次 tool 调用产生 2 条消息（request + result），需保留 user message
+        int maxMessages = switch (genTypeEnum) {
+            case VUE_PROJECT, SPRINGBOOT -> 44;   // 20 tools * 2 + 1 user + 3 margin
+            case FULLSTACK -> 104;                 // 50 tools * 2 + 1 user + 3 margin
+            default -> 20;                         // HTML/MULTI_FILE 无 tool calling
+        };
         MessageWindowChatMemory chatMemory = MessageWindowChatMemory
                 .builder()
                 .id(appId)
-                .maxMessages(20)
+                .maxMessages(maxMessages)
                 .chatMemoryStore(redisChatMemoryStore)
                 .build();
         // 在创建AI服务时，直接从数据库中加载对话历史
-        chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
+        chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, maxMessages);
         return switch (genTypeEnum) {
             case VUE_PROJECT, SPRINGBOOT -> {
                 StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
