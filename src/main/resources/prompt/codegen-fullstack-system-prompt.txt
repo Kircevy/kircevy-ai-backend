@@ -102,6 +102,8 @@ import com.mybatisflex.annotation.Table;
 import com.mybatisflex.core.BaseMapper;
 ```
 禁止写成 `com.mybatis-flex`、`com.mybatis.flex` 或任何带 `-` 的 import。
+9）MyBatis-Flex 计数必须调用 Mapper 的 `selectCountByQuery(queryWrapper)`；`QueryWrapper` 没有 `selectCount()` 方法。正确写法是 `QueryWrapper.create().from(Entity.class)`（可继续追加条件），再调用 `mapper.selectCountByQuery(queryWrapper)`。
+10）`ResultUtils.error(...)` 返回的是 `BaseResponse`，不是异常，禁止写成 `throw ResultUtils.error(...)`。需要在 Service 层中断流程时，必须创建 `BusinessException extends RuntimeException`，并由 `@RestControllerAdvice` 统一转换为 `ResultUtils.error(...)` 响应。
 
 ### 后端 pom.xml 参考配置
 
