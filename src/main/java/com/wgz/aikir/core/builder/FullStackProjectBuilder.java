@@ -1,10 +1,11 @@
 package com.wgz.aikir.core.builder;
 
-import cn.hutool.core.util.RuntimeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,7 +22,7 @@ public class FullStackProjectBuilder {
      * @param projectPath 项目根目录路径（如 fullstack_123）
      * @return 是否构建成功
      */
-    public boolean buildProject(String projectPath) {
+    public synchronized boolean buildProject(String projectPath) {
         File projectDir = new File(projectPath);
         if (!projectDir.exists() || !projectDir.isDirectory()) {
             log.error("全栈项目目录不存在: {}", projectPath);
@@ -81,6 +82,24 @@ public class FullStackProjectBuilder {
     /**
      * 校验全栈项目目录结构
      */
+    public synchronized boolean buildFrontendPreview(String projectPath) {
+        File frontendDir = new File(projectPath, "frontend");
+        File packageJson = new File(frontendDir, "package.json");
+        File indexHtml = new File(frontendDir, "index.html");
+        File mainJs = new File(frontendDir, "src/main.js");
+        File mainTs = new File(frontendDir, "src/main.ts");
+
+        if (!packageJson.isFile() || !indexHtml.isFile() || (!mainJs.isFile() && !mainTs.isFile())) {
+            log.debug("Frontend preview build deferred because required entry files are not ready: {}", frontendDir);
+            return false;
+        }
+        if (!executeNpmInstall(frontendDir) || !executeNpmBuild(frontendDir)) {
+            log.warn("Frontend preview build failed: {}", frontendDir);
+            return false;
+        }
+        return new File(frontendDir, "dist/index.html").isFile();
+    }
+
     private boolean validateProjectStructure(File projectDir) {
         boolean valid = true;
 
@@ -169,11 +188,7 @@ public class FullStackProjectBuilder {
     private boolean executeCommand(File workingDir, String command, int timeoutSeconds) {
         try {
             log.info("在目录 {} 中执行命令: {}", workingDir.getAbsolutePath(), command);
-            Process process = RuntimeUtil.exec(
-                    null,
-                    workingDir,
-                    command.split("\\s+")
-            );
+            Process process = startProcess(workingDir, command.split("\\s+"));
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 log.error("命令执行超时（{}秒），强制终止进程", timeoutSeconds);
@@ -201,6 +216,25 @@ public class FullStackProjectBuilder {
             log.error("执行命令失败: {}, 错误信息: {}", command, e.getMessage(), e);
             return false;
         }
+    }
+
+    /**
+     * 让子进程使用运行当前服务的 JDK。
+     * IDE 启动服务时，PATH 中的 mvn.cmd 可能仍关联到低版本 JDK，导致生成项目即使声明
+     * Java 21 也会出现“ 不支持发行版本 21 ”。
+     */
+    private Process startProcess(File workingDir, String... command) throws IOException {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.directory(workingDir);
+
+        Map<String, String> environment = processBuilder.environment();
+        String javaHome = System.getProperty("java.home");
+        environment.put("JAVA_HOME", javaHome);
+        String pathKey = environment.containsKey("Path") ? "Path" : "PATH";
+        String currentPath = environment.getOrDefault(pathKey, "");
+        environment.put(pathKey, javaHome + File.separator + "bin" + File.pathSeparator + currentPath);
+
+        return processBuilder.start();
     }
 
     /**
