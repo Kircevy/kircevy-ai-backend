@@ -1,6 +1,7 @@
 package com.wgz.aikir.core.handler;
 
 import com.wgz.aikir.model.entity.User;
+import com.wgz.aikir.model.entity.ChatHistory;
 import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.service.ChatHistoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,13 @@ public class SimpleTextStreamHandler {
                                ChatHistoryService chatHistoryService,
                                long appId, User loginUser) {
         StringBuilder aiResponseBuilder = new StringBuilder();
+        ChatHistory aiChatHistory = ChatHistory.builder()
+                .appId(appId)
+                .userId(loginUser.getId())
+                .messageType(ChatHistoryMessageTypeEnum.AI.getValue())
+                .message("正在生成代码，请稍候…")
+                .build();
+        chatHistoryService.save(aiChatHistory);
         return originFlux
                 .map(chunk -> {
                     // 收集AI响应内容
@@ -35,13 +43,18 @@ public class SimpleTextStreamHandler {
                 })
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加AI消息到对话历史
-                    String aiResponse = aiResponseBuilder.toString();
-                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    updateAiChatHistory(chatHistoryService, aiChatHistory, aiResponseBuilder.toString());
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
-                    String errorMessage = "AI回复失败: " + error.getMessage();
-                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    updateAiChatHistory(chatHistoryService, aiChatHistory, "AI回复失败: " + error.getMessage());
                 });
+    }
+
+    private void updateAiChatHistory(ChatHistoryService chatHistoryService, ChatHistory chatHistory, String message) {
+        chatHistory.setMessage(message == null || message.isBlank() ? "AI 未返回可展示内容" : message);
+        if (!chatHistoryService.updateById(chatHistory)) {
+            log.warn("Failed to update AI chat history, id: {}", chatHistory.getId());
+        }
     }
 }

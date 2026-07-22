@@ -127,6 +127,28 @@ public class AppController {
                 ));
     }
 
+    @GetMapping("/chat/gen/code/status")
+    public BaseResponse<Boolean> getCodeGenerationStatus(@RequestParam Long appId,
+                                                          HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appService.isCodeGenerationRunning(appId, loginUser));
+    }
+
+    @GetMapping(value = "/chat/gen/code/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> subscribeCodeGeneration(@RequestParam Long appId,
+                                                                  HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        Flux<String> contentFlux = appService.subscribeCodeGeneration(appId, loginUser);
+        return contentFlux
+                .map(chunk -> ServerSentEvent.<String>builder()
+                        .data(JSONUtil.toJsonStr(Map.of("d", chunk)))
+                        .build())
+                .concatWith(Mono.just(ServerSentEvent.<String>builder()
+                        .event("done")
+                        .data("")
+                        .build()));
+    }
+
     /**
      * 应用部署（支持代码下载 / Docker 一键部署两种模式）
      *

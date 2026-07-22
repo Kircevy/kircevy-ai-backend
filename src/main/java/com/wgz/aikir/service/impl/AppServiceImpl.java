@@ -28,7 +28,9 @@ import com.wgz.aikir.monitor.MonitorContext;
 import com.wgz.aikir.monitor.MonitorContextHolder;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.service.ChatHistoryService;
+import com.wgz.aikir.service.CodeGenerationTaskService;
 import com.wgz.aikir.service.DockerComposeDeployService;
+import com.wgz.aikir.service.FrontendPreviewBuildService;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
@@ -84,6 +86,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private ScreenShotService screenShotService;
 
+    @Resource
+    private CodeGenerationTaskService codeGenerationTaskService;
+
+    @Resource
+    private FrontendPreviewBuildService frontendPreviewBuildService;
+
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -98,6 +106,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限访问该应用");
         }
         // 4. 获取应用的代码生成类型
+        ThrowUtils.throwIf(codeGenerationTaskService.isRunning(appId), ErrorCode.OPERATION_ERROR,
+                "该应用正在生成代码，请等待当前任务完成");
         String codeGenType = app.getCodeGenType();
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         if (codeGenTypeEnum == null) {
@@ -108,13 +118,37 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 6. 设置监控上下文（埋点）
         MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
         // 7. 调用 AI 生成代码（流式）
+        if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
+            frontendPreviewBuildService.markGenerationStarted(appId);
+        }
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
         // 8. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+        Flux<String> handledStream = streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
                 .doFinally(s -> {
                             // 8. 清理监控上下文
                             MonitorContextHolder.clearContext();
-                         });
+                          });
+        return codeGenerationTaskService.start(appId, handledStream);
+    }
+
+    @Override
+    public boolean isCodeGenerationRunning(Long appId, User loginUser) {
+        validateAppOwner(appId, loginUser);
+        return codeGenerationTaskService.isRunning(appId);
+    }
+
+    @Override
+    public Flux<String> subscribeCodeGeneration(Long appId, User loginUser) {
+        validateAppOwner(appId, loginUser);
+        return codeGenerationTaskService.subscribe(appId);
+    }
+
+    private void validateAppOwner(Long appId, User loginUser) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 错误");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!app.getUserId().equals(loginUser.getId()), ErrorCode.NO_AUTH_ERROR, "无权访问该应用");
     }
 
     @Override
@@ -200,7 +234,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 返回可访问的 URL 地址
         String appDeployUrl = String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
         // 调用截图方法并更新数据库
-        this.generateScreenShotAsync(appId, appDeployUrl);
         return appDeployUrl;
     }
 
@@ -227,7 +260,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
         // 调用截图方法并更新数据库（截取前端页面）
-        this.generateScreenShotAsync(appId, result.getFrontendUrl());
         log.info("Docker 一键部署成功，前端: {}，后端: {}", result.getFrontendUrl(), result.getBackendUrl());
         return result.getFrontendUrl();
     }
@@ -240,6 +272,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Override
     public void generateScreenShotAsync(Long appId, String appUrl){
         Thread.startVirtualThread(() -> {
+            try {
             // 生成截图并获取可访问的截图地址
             String screenshotUrl = screenShotService.generateAndSaveScreenshot(appUrl);
             log.info("更新应用封面截图： {}", screenshotUrl);
@@ -247,7 +280,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             updateApp.setId(appId);
             updateApp.setCover(screenshotUrl);
             boolean updateResult = this.updateById(updateApp);
-            ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用封面截图失败");
+            if (!updateResult) {
+                log.warn("更新应用封面截图失败，appId: {}", appId);
+            }
+            } catch (Exception exception) {
+                // Screenshot is best-effort and must never interrupt generation, preview or deployment.
+                log.warn("异步生成应用封面截图失败，appId: {}, url: {}", appId, appUrl, exception);
+            }
         });
     }
 
