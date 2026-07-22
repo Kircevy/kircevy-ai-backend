@@ -62,19 +62,17 @@ public class FileDirReadTool extends BaseTool {
             List<File> allFiles = FileUtil.loopFiles(targetDir, file -> !shouldIgnore(file.getName()));
             // 按路径深度和名称排序显示
             allFiles.stream()
-                    .sorted((f1, f2) -> {
-                        int depth1 = getRelativeDepth(targetDir, f1);
-                        int depth2 = getRelativeDepth(targetDir, f2);
-                        if (depth1 != depth2) {
-                            return Integer.compare(depth1, depth2);
-                        }
-                        return f1.getPath().compareTo(f2.getPath());
-                    })
+                    .sorted((f1, f2) -> f1.getPath().compareTo(f2.getPath()))
                     .forEach(file -> {
-                        int depth = getRelativeDepth(targetDir, file);
-                        String indent = "  ".repeat(depth);
-                        structure.append(indent).append(file.getName());
+                        String relativePath = targetDir.toPath()
+                                .relativize(file.toPath())
+                                .toString()
+                                .replace(File.separatorChar, '/');
+                        structure.append("- ").append(relativePath).append(System.lineSeparator());
                     });
+            if (allFiles.isEmpty()) {
+                structure.append("(empty)").append(System.lineSeparator());
+            }
             return structure.toString();
 
         } catch (Exception e) {
