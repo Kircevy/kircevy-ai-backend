@@ -70,11 +70,20 @@
 ├── docker-compose.yml                       # Docker Compose 编排文件
 └── README.md                                # 项目说明
 
-## 生成顺序（严格遵守）
+## 生成顺序（严格遵守：前端预览优先 + 接口契约驱动）
 
-1. **第一阶段：后端** — 先完成所有 backend/ 下的文件，包括 SQL 脚本
-2. **第二阶段：前端** — 再完成所有 frontend/ 下的文件，前端 API 层必须与后端接口一一对应
-3. **第三阶段：部署** — 最后生成 Dockerfile（后端和前端）和 docker-compose.yml
+1. **第一阶段：接口契约与可预览前端** — 先在项目根目录写入 `api-contract.md`，列清每个资源的 REST URL、HTTP 方法、请求参数、响应字段和错误格式；随后优先完成 `frontend/` 的可运行页面：`package.json`、`index.html`、`vite.config.js`、`src/main.js`、`src/App.vue`、路由、页面、样式和 `src/api/index.js`。此阶段页面必须使用完整的本地 mock 数据并能在没有后端服务时正常 `npm run build`，让静态预览尽早展示真实页面效果。
+2. **第二阶段：后端实现** — 再完成所有 `backend/` 文件、SQL 脚本和 CRUD 接口。Controller 的路径、方法、请求字段和响应字段必须严格实现 `api-contract.md`，不得自行改名或新增不兼容字段。
+3. **第三阶段：前端真实 API 对接** — 后端文件完成后，修改 `frontend/src/api/index.js`：保留 mock 数据作为请求失败时的预览回退，但默认改为通过 fetch 调用真实 `/api` 接口；逐项核对与 `api-contract.md`、Controller 完全一致。不要重写已经完成的页面布局和样式。
+4. **第四阶段：部署与最终验证** — 最后生成 Dockerfile、nginx.conf、docker-compose.yml 和 README。完成后仅进行一次根目录检查、一次 Maven 编译验证和一次前端构建验证。
+
+## 工具调用与目录检查规则（严格遵守）
+
+1. 所有工具路径都相对于项目根目录：使用 `backend`、`backend/src/main/java/...`，禁止使用 `/backend`、`根目录` 或任何绝对路径。
+2. 标准 Java 包结构不是重复文件。`common/BaseResponse.java`、`common/ErrorCode.java`、`config/CorsConfig.java`、`controller/*.java`、`entity/*.java` 必须位于各自子目录；不得因为文件名相似而删除它们。
+3. 先按本提示词完成全部文件写入，再进行一次根目录读取和一次 Maven 编译验证。不要为了“确认结构”反复读取父目录、子目录或删除文件。
+4. Maven 编译失败时，只根据编译错误改写对应文件，然后最多再编译一次；禁止删除 Java、Vue、JS、配置或 SQL 源文件来尝试修复。
+5. 目录读取结果仅用于确认文件是否存在；只要文件处于上述标准路径，就视为结构正确并继续后续步骤。
 
 ## 后端开发约束
 
@@ -85,6 +94,14 @@
 5）跨域配置：必须有 CorsConfig 允许前端跨域访问
 6）完整 CRUD：每个实体提供 增(Create) / 查(Retrieve) / 改(Update) / 删(Delete) 的标准 RESTful API
 7）后端服务端口：固定使用 8080
+8）Java import 必须使用合法 Java 包名，包名中绝不能出现连字符。MyBatis-Flex 的 Java 包前缀固定为 `com.mybatisflex`，例如：
+```java
+import com.mybatisflex.annotation.Id;
+import com.mybatisflex.annotation.KeyType;
+import com.mybatisflex.annotation.Table;
+import com.mybatisflex.core.BaseMapper;
+```
+禁止写成 `com.mybatis-flex`、`com.mybatis.flex` 或任何带 `-` 的 import。
 
 ### 后端 pom.xml 参考配置
 
@@ -195,6 +212,8 @@ mybatis-flex:
 5）禁止使用任何状态管理库、类型校验库、代码格式化库
 6）将可运行作为项目生成的第一要义，尽量用最简单的方式满足需求
 7）前端 API 层（src/api/）必须与后端 Controller 接口一一对应，使用 fetch 或原生 XMLHttpRequest 发起请求（禁止引入 axios 等第三方库）
+8）前端预览优先：在后端尚未完成时，页面必须从 src/api/ 中的本地 mock 数据获得完整可展示内容；真实 fetch 请求失败时也必须回退到同一份 mock 数据，禁止因为后端未启动而让页面白屏、无限 loading 或报错。
+9）Vite 配置必须设置 `base: './'`，保证生成的 dist 放在本系统静态预览的嵌套目录中时，JS 和 CSS 资源仍能正确加载。
 
 ### 前端 vite.config.js 参考配置
 

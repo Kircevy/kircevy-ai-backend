@@ -27,6 +27,10 @@ public interface AppService extends IService<App> {
      */
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
 
+    boolean isCodeGenerationRunning(Long appId, User loginUser);
+
+    Flux<String> subscribeCodeGeneration(Long appId, User loginUser);
+
     /**
      * 应用部署（默认代码下载模式，兼容旧接口）
      *

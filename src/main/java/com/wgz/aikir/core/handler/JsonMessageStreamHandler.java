@@ -10,6 +10,7 @@ import com.wgz.aikir.ai.tools.ToolManager;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
 import com.wgz.aikir.model.entity.User;
+import com.wgz.aikir.model.entity.ChatHistory;
 import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.service.ChatHistoryService;
 import jakarta.annotation.Resource;
@@ -46,6 +47,13 @@ public class JsonMessageStreamHandler {
                                long appId, User loginUser) {
         // 收集数据用于生成后端记忆格式
         StringBuilder chatHistoryStringBuilder = new StringBuilder();
+        ChatHistory aiChatHistory = ChatHistory.builder()
+                .appId(appId)
+                .userId(loginUser.getId())
+                .messageType(ChatHistoryMessageTypeEnum.AI.getValue())
+                .message("正在生成代码，请稍候…")
+                .build();
+        chatHistoryService.save(aiChatHistory);
         // 用于跟踪已经见过的工具ID，判断是否是第一次调用
         Set<String> seenToolIds = new HashSet<>();
         return originFlux
@@ -56,17 +64,22 @@ public class JsonMessageStreamHandler {
                 .filter(StrUtil::isNotEmpty) // 过滤空字串
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
-                    String aiResponse = chatHistoryStringBuilder.toString();
-                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    updateAiChatHistory(chatHistoryService, aiChatHistory, chatHistoryStringBuilder.toString());
 //                    // 异步构建 Vue 项目
 //                    String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
 //                    vueProjectBuilder.buildVueProjectAsync(projectPath);
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
-                    String errorMessage = "AI回复失败: " + error.getMessage();
-                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    updateAiChatHistory(chatHistoryService, aiChatHistory, "AI回复失败: " + error.getMessage());
                 });
+    }
+
+    private void updateAiChatHistory(ChatHistoryService chatHistoryService, ChatHistory chatHistory, String message) {
+        chatHistory.setMessage(StrUtil.isBlank(message) ? "AI 未返回可展示内容" : message);
+        if (!chatHistoryService.updateById(chatHistory)) {
+            log.warn("Failed to update AI chat history, id: {}", chatHistory.getId());
+        }
     }
 
     /**
@@ -101,13 +114,21 @@ public class JsonMessageStreamHandler {
             case TOOL_EXECUTED -> {
                 ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
                 String toolName = toolExecutedMessage.getName();
-                JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
                 BaseTool tool = toolManager.getTool(toolName);
-                String result =  tool.generateToolExecutedResult(jsonObject);
-                // 输出前端和要持久化的内容
-                String output = String.format("\n\n%s\n\n", result);
-                chatHistoryStringBuilder.append(output);
-                return output;
+                try {
+                    JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
+                    String result = tool.generateToolExecutedResult(jsonObject);
+                    // 输出前端和要持久化的内容
+                    String output = String.format("\n\n%s\n\n", result);
+                    chatHistoryStringBuilder.append(output);
+                    return output;
+                } catch (cn.hutool.json.JSONException e) {
+                    // AI 返回的工具参数 JSON 可能因流式传输截断或特殊字符未转义而导致解析失败
+                    log.error("工具参数 JSON 解析失败，工具名: {}，参数内容: {}", toolName, toolExecutedMessage.getArguments(), e);
+                    String fallbackOutput = String.format("\n\n[工具调用] %s（参数解析失败）\n\n", tool != null ? tool.getDisplayName() : toolName);
+                    chatHistoryStringBuilder.append(fallbackOutput);
+                    return fallbackOutput;
+                }
             }
             default -> {
                 log.error("不支持的消息类型: {}", typeEnum);

@@ -69,26 +69,35 @@ public class AiCodeGeneratorServiceFactory{
 
     private AiCodeGeneratorService createAiCodeGeneratorService(long appId, CodeGenTypeEnum genTypeEnum){
         log.info("为appId：{}，创建新的 AI 实例，类型：{}", appId, genTypeEnum);
-        // 根据类型计算 ChatMemory 窗口大小：每次 tool 调用产生 2 条消息（request + result），需保留 user message
+        // 普通文本生成才需要复用 Redis 对话记忆。工程型生成通过工具连续写入文件，
+        // 如果也使用固定大小的 MessageWindowChatMemory，工具 request/result 会把本轮
+        // UserMessage 挤出窗口，下一轮模型请求就会因没有 user 消息而被拒绝。
+        // 工程型接口带有 @MemoryId，因此必须配置 ChatMemoryProvider；下面为其提供
+        // 仅随当前 AI 服务实例存在的内存记忆，不持久化到 Redis，也不淘汰本轮消息。
         int maxMessages = switch (genTypeEnum) {
-            case VUE_PROJECT, SPRINGBOOT -> 44;   // 20 tools * 2 + 1 user + 3 margin
-            case FULLSTACK -> 104;                 // 50 tools * 2 + 1 user + 3 margin
+            case VUE_PROJECT, SPRINGBOOT -> 44;
+            case FULLSTACK -> 104;
             default -> 20;                         // HTML/MULTI_FILE 无 tool calling
         };
-        MessageWindowChatMemory chatMemory = MessageWindowChatMemory
-                .builder()
+        boolean usesPersistentChatMemory = genTypeEnum == CodeGenTypeEnum.HTML
+                || genTypeEnum == CodeGenTypeEnum.MULTI_FILE;
+        MessageWindowChatMemory chatMemory = usesPersistentChatMemory
+                ? MessageWindowChatMemory.builder()
                 .id(appId)
                 .maxMessages(maxMessages)
                 .chatMemoryStore(redisChatMemoryStore)
-                .build();
-        // 在创建AI服务时，直接从数据库中加载对话历史
-        chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, maxMessages);
+                .build()
+                : null;
+        if (usesPersistentChatMemory) {
+            // 仅普通文本生成加载历史对话，避免工程型工具调用被历史消息和窗口淘汰影响。
+            chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, maxMessages);
+        }
         return switch (genTypeEnum) {
             case VUE_PROJECT, SPRINGBOOT -> {
                 StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
                 yield AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
-                    .chatMemoryProvider(memoryId -> chatMemory)
+                    .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(Integer.MAX_VALUE))
                     .tools(toolManager.getAllTools())
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
@@ -101,7 +110,7 @@ public class AiCodeGeneratorServiceFactory{
                 StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
                 yield AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
-                    .chatMemoryProvider(memoryId -> chatMemory)
+                    .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(Integer.MAX_VALUE))
                     .tools(toolManager.getAllTools())
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()

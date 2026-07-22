@@ -32,7 +32,12 @@ public class FileDeleteTool extends BaseTool {
             if (!path.isAbsolute()) {
                 String projectDirName = getProjectDirName(appId);
                 Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
-                path = projectRoot.resolve(relativeFilePath);
+                path = projectRoot.resolve(relativeFilePath).normalize();
+                if (!path.startsWith(projectRoot.normalize())) {
+                    return "错误：不允许删除项目目录外的文件 - " + relativeFilePath;
+                }
+            } else {
+                return "错误：删除工具只接受项目根目录下的相对路径";
             }
             if (!Files.exists(path)) {
                 return "警告：文件不存在，无需删除 - " + relativeFilePath;
@@ -44,6 +49,9 @@ public class FileDeleteTool extends BaseTool {
             String fileName = path.getFileName().toString();
             if (isImportantFile(fileName)) {
                 return "错误：不允许删除重要文件 - " + fileName;
+            }
+            if (isSourceFile(fileName)) {
+                return "错误：不允许删除源代码文件，请使用文件写入工具覆盖修正内容 - " + fileName;
             }
             Files.delete(path);
             log.info("成功删除文件: {}", path.toAbsolutePath());
@@ -71,6 +79,21 @@ public class FileDeleteTool extends BaseTool {
             }
         }
         return false;
+    }
+
+    private boolean isSourceFile(String fileName) {
+        String lowerCaseFileName = fileName.toLowerCase();
+        return lowerCaseFileName.endsWith(".java")
+                || lowerCaseFileName.endsWith(".kt")
+                || lowerCaseFileName.endsWith(".js")
+                || lowerCaseFileName.endsWith(".ts")
+                || lowerCaseFileName.endsWith(".vue")
+                || lowerCaseFileName.endsWith(".css")
+                || lowerCaseFileName.endsWith(".scss")
+                || lowerCaseFileName.endsWith(".html")
+                || lowerCaseFileName.endsWith(".xml")
+                || lowerCaseFileName.endsWith(".yml")
+                || lowerCaseFileName.endsWith(".yaml");
     }
 
     @Override

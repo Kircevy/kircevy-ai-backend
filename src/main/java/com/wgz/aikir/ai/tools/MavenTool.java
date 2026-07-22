@@ -1,13 +1,17 @@
 package com.wgz.aikir.ai.tools;
 
-import cn.hutool.core.util.RuntimeUtil;
 import cn.hutool.json.JSONObject;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agent.tool.ToolMemoryId;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.Map;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -20,11 +24,21 @@ public class MavenTool extends BaseTool {
 
     @Tool("执行 Maven 编译命令，验证后端 Java 项目代码是否能通过编译")
     public String executeMaven(
+            @ToolMemoryId Long appId,
             @P("Maven 命令（如 compile, test, package, clean install）") String command,
             @P("项目根目录的绝对路径") String projectPath
     ) {
         log.info("在目录 {} 中执行 Maven 命令: {}", projectPath, command);
-        File projectDir = new File(projectPath);
+        Path projectRoot = Paths.get(getProjectRootPath(appId)).toAbsolutePath().normalize();
+        Path requestedPath = Paths.get(projectPath);
+        if (requestedPath.isAbsolute()) {
+            return "错误：项目路径必须相对于生成项目根目录，例如 backend；不要使用绝对路径 " + projectPath;
+        }
+        Path resolvedPath = projectRoot.resolve(requestedPath).normalize();
+        if (!resolvedPath.startsWith(projectRoot)) {
+            return "错误：项目路径不能位于生成项目目录之外 - " + projectPath;
+        }
+        File projectDir = resolvedPath.toFile();
         if (!projectDir.exists() || !projectDir.isDirectory()) {
             return "错误：项目目录不存在 - " + projectPath;
         }
@@ -39,11 +53,7 @@ public class MavenTool extends BaseTool {
 
         try {
             log.info("执行命令: {}", fullCommand);
-            Process process = RuntimeUtil.exec(
-                    null,
-                    projectDir,
-                    (mvnCmd + " " + command).split("\\s+")
-            );
+            Process process = startProcess(projectDir, (mvnCmd + " " + command).split("\\s+"));
             // 等待进程完成，设置 5 分钟超时
             boolean finished = process.waitFor(300, TimeUnit.SECONDS);
             if (!finished) {
@@ -99,6 +109,20 @@ public class MavenTool extends BaseTool {
 
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("windows");
+    }
+
+    private Process startProcess(File workingDir, String... command) throws IOException {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.directory(workingDir);
+
+        Map<String, String> environment = processBuilder.environment();
+        String javaHome = System.getProperty("java.home");
+        environment.put("JAVA_HOME", javaHome);
+        String pathKey = environment.containsKey("Path") ? "Path" : "PATH";
+        String currentPath = environment.getOrDefault(pathKey, "");
+        environment.put(pathKey, javaHome + File.separator + "bin" + File.pathSeparator + currentPath);
+
+        return processBuilder.start();
     }
 
     @Override
