@@ -124,8 +124,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 6. 设置监控上下文（埋点）
         MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
         // 7. 调用 AI 生成代码（流式）
-        if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
-            frontendPreviewBuildService.markGenerationStarted(appId);
+        if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK
+                || codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT
+                || codeGenTypeEnum == CodeGenTypeEnum.HTML) {
+            frontendPreviewBuildService.markGenerationStarted(appId, codeGenTypeEnum);
         }
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
         // 8. 收集 AI 响应的内容，并且在完成后保存记录到对话历史

@@ -3,6 +3,7 @@ package com.wgz.aikir.service;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.FullStackProjectBuilder;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
+import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -36,7 +36,7 @@ public class FrontendPreviewBuildService {
 
     private final Map<Long, ScheduledFuture<?>> pendingBuilds = new ConcurrentHashMap<>();
 
-    private final Set<Long> pendingFirstPreviewScreenshots = ConcurrentHashMap.newKeySet();
+    private final Map<Long, CodeGenTypeEnum> pendingFirstPreviewScreenshots = new ConcurrentHashMap<>();
 
     @Resource
     private FullStackProjectBuilder fullStackProjectBuilder;
@@ -55,11 +55,11 @@ public class FrontendPreviewBuildService {
     private String contextPath;
 
     /**
-     * Called once when a new full-stack generation starts. The screenshot is delayed until the
-     * first successful frontend build, so it never blocks generation or preview rendering.
+     * Registers a single, asynchronous cover screenshot for this generation. It is consumed only
+     * when the first previewable result is available, never for subsequent file writes.
      */
-    public void markGenerationStarted(Long appId) {
-        pendingFirstPreviewScreenshots.add(appId);
+    public void markGenerationStarted(Long appId, CodeGenTypeEnum codeGenType) {
+        pendingFirstPreviewScreenshots.put(appId, codeGenType);
     }
 
     public void scheduleBuild(Long appId) {
@@ -89,12 +89,7 @@ public class FrontendPreviewBuildService {
             String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "fullstack_" + appId;
             if (fullStackProjectBuilder.buildFrontendPreview(projectPath)) {
                 log.info("Frontend preview is ready for appId: {}", appId);
-                if (pendingFirstPreviewScreenshots.remove(appId)) {
-                    String previewUrl = String.format("http://127.0.0.1:%d%s/static/fullstack_%d/frontend/dist/index.html#/",
-                            serverPort, contextPath, appId);
-                    // generateScreenShotAsync starts a virtual thread; do not block this build executor.
-                    appService.generateScreenShotAsync(appId, previewUrl);
-                }
+                generateFirstPreviewScreenshot(appId, "frontend/dist/index.html#/");
             }
         } catch (Exception exception) {
             // Later frontend writes automatically schedule a new build attempt.
@@ -118,6 +113,7 @@ public class FrontendPreviewBuildService {
 
             if (vueProjectBuilder.buildProject(projectDir.getAbsolutePath())) {
                 log.info("Vue preview is ready for appId: {}", appId);
+                generateFirstPreviewScreenshot(appId, "index.html#/");
             }
         } catch (Exception exception) {
             // A later file write will schedule another build attempt.
@@ -125,6 +121,24 @@ public class FrontendPreviewBuildService {
         } finally {
             pendingBuilds.remove(appId);
         }
+    }
+
+    /**
+     * HTML does not need a build step: writing index.html makes it previewable immediately.
+     */
+    public void markStaticPreviewReady(Long appId) {
+        generateFirstPreviewScreenshot(appId, "index.html");
+    }
+
+    private void generateFirstPreviewScreenshot(Long appId, String relativePreviewPath) {
+        CodeGenTypeEnum codeGenType = pendingFirstPreviewScreenshots.remove(appId);
+        if (codeGenType == null) {
+            return;
+        }
+        String previewUrl = String.format("http://127.0.0.1:%d%s/static/%s_%d/%s",
+                serverPort, contextPath, codeGenType.getValue(), appId, relativePreviewPath);
+        // generateScreenShotAsync starts a virtual thread; do not block generation or preview building.
+        appService.generateScreenShotAsync(appId, previewUrl);
     }
 
     @PreDestroy
