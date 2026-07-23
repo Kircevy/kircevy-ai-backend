@@ -81,14 +81,16 @@ public class FileWriteTool extends BaseTool {
 
     private void scheduleFrontendPreviewBuild(Path path, Long appId) {
         String projectDirName = getProjectDirName(appId);
-        if (!projectDirName.startsWith("fullstack_")) {
-            return;
-        }
-        Path frontendRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName, "frontend")
+        Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName)
                 .toAbsolutePath()
                 .normalize();
-        if (path.toAbsolutePath().normalize().startsWith(frontendRoot)) {
+        Path normalizedPath = path.toAbsolutePath().normalize();
+        if (projectDirName.startsWith("fullstack_")
+                && normalizedPath.startsWith(projectRoot.resolve("frontend"))) {
             frontendPreviewBuildService.scheduleBuild(appId);
+        } else if (projectDirName.startsWith("vue_project_")
+                && normalizedPath.startsWith(projectRoot)) {
+            frontendPreviewBuildService.scheduleVueBuild(appId);
         }
     }
 

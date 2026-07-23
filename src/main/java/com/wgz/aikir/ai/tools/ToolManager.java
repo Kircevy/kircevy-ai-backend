@@ -5,6 +5,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -56,5 +57,15 @@ public class ToolManager {
      */
     public BaseTool[] getAllTools() {
         return tools;
+    }
+
+    /**
+     * Project generators must end with a normal assistant reply. ExitTool only returns a tool
+     * result and cannot terminate the model tool loop, so exposing it can cause repeated exits.
+     */
+    public BaseTool[] getCodeGenerationTools() {
+        return Arrays.stream(tools)
+                .filter(tool -> !"exit".equals(tool.getToolName()))
+                .toArray(BaseTool[]::new);
     }
 }

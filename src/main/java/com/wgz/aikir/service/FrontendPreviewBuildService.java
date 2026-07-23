@@ -2,6 +2,7 @@ package com.wgz.aikir.service;
 
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.FullStackProjectBuilder;
+import com.wgz.aikir.core.builder.VueProjectBuilder;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,9 @@ public class FrontendPreviewBuildService {
     private FullStackProjectBuilder fullStackProjectBuilder;
 
     @Resource
+    private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
     @Lazy
     private AppService appService;
 
@@ -59,16 +63,28 @@ public class FrontendPreviewBuildService {
     }
 
     public void scheduleBuild(Long appId) {
+        scheduleBuild(appId, () -> buildFullStackPreview(appId));
+    }
+
+    /**
+     * Vue projects use the same static preview endpoint as their generated project root.
+     * Build only after file writes have been idle, so partial writes do not block generation.
+     */
+    public void scheduleVueBuild(Long appId) {
+        scheduleBuild(appId, () -> buildVuePreview(appId));
+    }
+
+    private void scheduleBuild(Long appId, Runnable buildTask) {
         ScheduledFuture<?> previousBuild = pendingBuilds.get(appId);
         if (previousBuild != null) {
             previousBuild.cancel(false);
         }
-        ScheduledFuture<?> scheduledBuild = executor.schedule(() -> buildPreview(appId),
+        ScheduledFuture<?> scheduledBuild = executor.schedule(buildTask,
                 BUILD_DEBOUNCE_SECONDS, TimeUnit.SECONDS);
         pendingBuilds.put(appId, scheduledBuild);
     }
 
-    private void buildPreview(Long appId) {
+    private void buildFullStackPreview(Long appId) {
         try {
             String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "fullstack_" + appId;
             if (fullStackProjectBuilder.buildFrontendPreview(projectPath)) {
@@ -83,6 +99,29 @@ public class FrontendPreviewBuildService {
         } catch (Exception exception) {
             // Later frontend writes automatically schedule a new build attempt.
             log.debug("Frontend preview build attempt failed for appId: {}", appId, exception);
+        } finally {
+            pendingBuilds.remove(appId);
+        }
+    }
+
+    private void buildVuePreview(Long appId) {
+        try {
+            File projectDir = new File(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId);
+            File mainJs = new File(projectDir, "src/main.js");
+            File mainTs = new File(projectDir, "src/main.ts");
+            if (!new File(projectDir, "package.json").isFile()
+                    || !new File(projectDir, "index.html").isFile()
+                    || (!mainJs.isFile() && !mainTs.isFile())) {
+                log.debug("Vue preview build deferred because required entry files are not ready: {}", projectDir);
+                return;
+            }
+
+            if (vueProjectBuilder.buildProject(projectDir.getAbsolutePath())) {
+                log.info("Vue preview is ready for appId: {}", appId);
+            }
+        } catch (Exception exception) {
+            // A later file write will schedule another build attempt.
+            log.debug("Vue preview build attempt failed for appId: {}", appId, exception);
         } finally {
             pendingBuilds.remove(appId);
         }
