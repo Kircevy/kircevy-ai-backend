@@ -32,6 +32,7 @@ import com.wgz.aikir.service.ChatHistoryService;
 import com.wgz.aikir.service.CodeGenerationTaskService;
 import com.wgz.aikir.service.DockerComposeDeployService;
 import com.wgz.aikir.service.FrontendPreviewBuildService;
+import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
@@ -98,6 +99,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private FrontendPreviewBuildService frontendPreviewBuildService;
 
+    @Resource
+    private GenerationRunService generationRunService;
+
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -129,9 +133,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 || codeGenTypeEnum == CodeGenTypeEnum.HTML) {
             frontendPreviewBuildService.markGenerationStarted(appId, codeGenTypeEnum);
         }
+        var generationRun = generationRunService.startDirectRunIfEnabled(app, loginUser, codeGenTypeEnum, message);
+        String runId = generationRun == null ? null : generationRun.getRunId();
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
         // 8. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
         Flux<String> handledStream = streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .doOnComplete(() -> generationRunService.completeDirectRun(runId))
+                .doOnError(error -> generationRunService.failDirectRun(runId, error))
                 .doFinally(s -> {
                             // 8. 清理监控上下文
                             MonitorContextHolder.clearContext();
