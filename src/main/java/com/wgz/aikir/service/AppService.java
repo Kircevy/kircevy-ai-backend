@@ -7,6 +7,7 @@ import com.wgz.aikir.model.entity.App;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -66,6 +67,11 @@ public interface AppService extends IService<App> {
     AppVO getAppVO(App app);
 
     boolean isDownLoadAppAllowed(Long appId);
+
+    /**
+     * Read the generated project directory tree for its owner.
+     */
+    List<CodeFileTreeNode> listCodeFileTree(Long appId, User loginUser);
 
     /**
      * 获取应用封装类列表

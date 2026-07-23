@@ -1,0 +1,56 @@
+{
+  "version": "2026-07-23",
+  "purpose": "用于对比 DIRECT 与后续 MULTI_AGENT 的全栈生成效果。",
+  "cases": [
+    {
+      "id": "blog-crud",
+      "prompt": "生成一个带分类、文章列表、文章详情和后台文章管理功能的博客系统。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "文章接口契约保持一致"]
+    },
+    {
+      "id": "task-board",
+      "prompt": "生成一个团队任务看板，包含项目、任务状态、负责人、筛选和任务详情。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "存在任务 CRUD 接口"]
+    },
+    {
+      "id": "inventory",
+      "prompt": "生成一个小型库存管理系统，包含商品、分类、库存变动记录、低库存提醒和管理页面。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备库存变动流程"]
+    },
+    {
+      "id": "event-registration",
+      "prompt": "生成一个活动报名系统，包含活动展示、报名表单、报名名单管理和名额限制。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "报名接口契约保持一致"]
+    },
+    {
+      "id": "course-platform",
+      "prompt": "生成一个课程展示与报名平台，包含课程分类、课程详情、报名和后台课程管理。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备课程与报名数据模型"]
+    },
+    {
+      "id": "expense-tracker",
+      "prompt": "生成一个个人收支管理系统，包含收支记录、分类、月度统计、筛选和数据管理。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备汇总接口或聚合逻辑"]
+    },
+    {
+      "id": "appointment",
+      "prompt": "生成一个预约管理系统，包含服务项目、可预约时间、预约提交、预约状态和后台管理。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备预约状态处理逻辑"]
+    },
+    {
+      "id": "recipe-site",
+      "prompt": "生成一个食谱分享网站，包含食谱分类、食谱详情、收藏、搜索和后台内容管理。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备搜索或筛选接口"]
+    },
+    {
+      "id": "feedback-center",
+      "prompt": "生成一个用户反馈中心，包含反馈提交、反馈状态、管理员回复和分类统计。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "具备反馈生命周期处理"]
+    },
+    {
+      "id": "product-catalog",
+      "prompt": "生成一个产品展示与询价系统，包含产品分类、产品详情、询价表单、询价记录和后台产品管理。使用 Vue3、Spring Boot 和 MySQL。",
+      "acceptance": ["前端构建成功", "后端编译成功", "询价提交接口契约保持一致"]
+    }
+  ]
+}

@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -44,6 +46,14 @@ public class CodeGenerationTaskService {
 
     public Flux<String> subscribe(Long appId) {
         Flux<String> stream = activeStreams.get(appId);
-        return stream == null ? Flux.empty() : stream;
+        if (stream == null) {
+            return Flux.empty();
+        }
+        // A returning browser can receive a long replay. Batch fragments so the UI does not
+        // render Markdown once per token and become unresponsive while catching up.
+        return stream
+                .bufferTimeout(64, Duration.ofMillis(120))
+                .filter(chunks -> !chunks.isEmpty())
+                .map(chunks -> String.join("", chunks));
     }
 }

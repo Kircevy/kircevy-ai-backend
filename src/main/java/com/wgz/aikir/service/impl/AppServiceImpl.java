@@ -23,6 +23,7 @@ import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import com.wgz.aikir.model.vo.UserVO;
 import com.wgz.aikir.monitor.MonitorContext;
 import com.wgz.aikir.monitor.MonitorContextHolder;
@@ -31,6 +32,7 @@ import com.wgz.aikir.service.ChatHistoryService;
 import com.wgz.aikir.service.CodeGenerationTaskService;
 import com.wgz.aikir.service.DockerComposeDeployService;
 import com.wgz.aikir.service.FrontendPreviewBuildService;
+import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import jakarta.annotation.Resource;
@@ -47,6 +49,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +63,10 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
+
+    private static final Set<String> CODE_TREE_IGNORED_NAMES = Set.of(
+            "node_modules", ".git", "dist", "build", "target", ".idea", ".vscode", ".mvn", "coverage"
+    );
 
     @Resource
     private UserService userService;
@@ -92,6 +99,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private FrontendPreviewBuildService frontendPreviewBuildService;
 
+    @Resource
+    private GenerationRunService generationRunService;
+
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -118,12 +128,18 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 6. 设置监控上下文（埋点）
         MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
         // 7. 调用 AI 生成代码（流式）
-        if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
-            frontendPreviewBuildService.markGenerationStarted(appId);
+        if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK
+                || codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT
+                || codeGenTypeEnum == CodeGenTypeEnum.HTML) {
+            frontendPreviewBuildService.markGenerationStarted(appId, codeGenTypeEnum);
         }
+        var generationRun = generationRunService.startDirectRunIfEnabled(app, loginUser, codeGenTypeEnum, message);
+        String runId = generationRun == null ? null : generationRun.getRunId();
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
         // 8. 收集 AI 响应的内容，并且在完成后保存记录到对话历史
         Flux<String> handledStream = streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .doOnComplete(() -> generationRunService.completeDirectRun(runId))
+                .doOnError(error -> generationRunService.failDirectRun(runId, error))
                 .doFinally(s -> {
                             // 8. 清理监控上下文
                             MonitorContextHolder.clearContext();
@@ -314,6 +330,52 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 拼接项目预览目录
         String previewDir = app.getCodeGenType() + "_" + appId;
         return checkFileExists(previewDir);
+    }
+
+    @Override
+    public List<CodeFileTreeNode> listCodeFileTree(Long appId, User loginUser) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 错误");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        if (!app.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权查看该应用的代码目录");
+        }
+
+        Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR,
+                app.getCodeGenType() + "_" + appId).toAbsolutePath().normalize();
+        if (!Files.isDirectory(projectRoot)) {
+            return List.of();
+        }
+        return readCodeTree(projectRoot, projectRoot);
+    }
+
+    private List<CodeFileTreeNode> readCodeTree(Path projectRoot, Path directory) {
+        try (var paths = Files.list(directory)) {
+            return paths
+                    .filter(path -> !CODE_TREE_IGNORED_NAMES.contains(path.getFileName().toString()))
+                    .filter(path -> !path.getFileName().toString().startsWith("."))
+                    .sorted(Comparator
+                            .comparing((Path path) -> !Files.isDirectory(path))
+                            .thenComparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
+                    .map(path -> toCodeTreeNode(projectRoot, path))
+                    .toList();
+        } catch (Exception exception) {
+            log.warn("读取应用代码目录失败: {}", directory, exception);
+            return List.of();
+        }
+    }
+
+    private CodeFileTreeNode toCodeTreeNode(Path projectRoot, Path path) {
+        CodeFileTreeNode node = new CodeFileTreeNode();
+        boolean directory = Files.isDirectory(path);
+        node.setTitle(path.getFileName().toString());
+        node.setKey(projectRoot.relativize(path).toString().replace(File.separatorChar, '/'));
+        node.setLeaf(!directory);
+        if (directory) {
+            node.setChildren(readCodeTree(projectRoot, path));
+        }
+        return node;
     }
 
     /**

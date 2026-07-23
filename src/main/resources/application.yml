@@ -111,3 +111,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+# 二阶段 M0：默认关闭，确保一阶段生成路径保持不变。
+multi-agent:
+  enabled: false
+  fullstack-only: true

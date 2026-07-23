@@ -16,6 +16,7 @@ import com.wgz.aikir.core.saver.CodeFileSaverExecutor;
 import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
+import com.wgz.aikir.service.FrontendPreviewBuildService;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
@@ -41,6 +42,9 @@ public class AiCodeGeneratorFacade {
 
     @Resource
     private FullStackProjectBuilder fullStackProjectBuilder;
+
+    @Resource
+    private FrontendPreviewBuildService frontendPreviewBuildService;
 
     /**
      * 统一入口：根据类型生成并保存代码
@@ -151,6 +155,9 @@ public class AiCodeGeneratorFacade {
                 // 使用执行器保存代码
                 File saveDir = CodeFileSaverExecutor.executeSaver(parsedResult, codeGenType, appId);
                 log.info("保存成功，目录为：{}", saveDir.getAbsolutePath());
+                if (codeGenType == CodeGenTypeEnum.HTML) {
+                    frontendPreviewBuildService.markStaticPreviewReady(appId);
+                }
             } catch (Exception e) {
                 log.error("保存失败: {}", e.getMessage());
             }

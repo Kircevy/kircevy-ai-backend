@@ -20,6 +20,7 @@ import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import com.wgz.aikir.rateLimiter.annotation.RateLimit;
 import com.wgz.aikir.rateLimiter.enums.RateLimitType;
 import com.wgz.aikir.service.ProjectDownloadService;
@@ -292,6 +293,16 @@ public class AppController {
     public BaseResponse<Boolean> isDownLoadAppAllowed(Long appId){
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(appService.isDownLoadAppAllowed(appId));
+    }
+
+    /**
+     * Get the generated source directory tree for the current user's application.
+     */
+    @GetMapping("/code-files")
+    public BaseResponse<List<CodeFileTreeNode>> listCodeFiles(@RequestParam Long appId,
+                                                               HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appService.listCodeFileTree(appId, loginUser));
     }
 
     /**
