@@ -81,6 +81,8 @@ langchain4j:
       api-key: <Your API Key>
       model-name: qwen-turbo
       max-tokens: 100
+      timeout: PT3M
+      max-retries: 0
       log-requests: true
       log-responses: true
 
@@ -116,3 +118,4 @@ management:
 multi-agent:
   enabled: false
   fullstack-only: true
+  planning-enabled: false

@@ -3,10 +3,17 @@ package com.wgz.aikir.multiagent.controller;
 import com.wgz.aikir.common.BaseResponse;
 import com.wgz.aikir.common.ResultUtils;
 import com.wgz.aikir.multiagent.domain.entity.AgentEvent;
+import com.wgz.aikir.multiagent.domain.entity.AgentArtifact;
 import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
+import com.wgz.aikir.multiagent.model.request.MultiAgentPlanningRequest;
+import com.wgz.aikir.multiagent.service.PlanningAgentService;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.service.UserService;
+import com.wgz.aikir.service.AppService;
+import com.wgz.aikir.model.entity.App;
+import com.wgz.aikir.exception.ErrorCode;
+import com.wgz.aikir.exception.ThrowUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
@@ -16,6 +23,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,6 +40,12 @@ public class AgentRunController {
 
     @Resource
     private GenerationRunService generationRunService;
+
+    @Resource
+    private PlanningAgentService planningAgentService;
+
+    @Resource
+    private AppService appService;
 
     @Resource
     private UserService userService;
@@ -53,6 +68,25 @@ public class AgentRunController {
                                                       HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         return ResultUtils.success(generationRunService.listEventsForOwner(runId, afterSequence, loginUser));
+    }
+
+    @GetMapping("/{runId}/artifacts")
+    public BaseResponse<List<AgentArtifact>> listArtifacts(@PathVariable String runId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(generationRunService.listArtifactsForOwner(runId, loginUser));
+    }
+
+    /** 发起 M1 协作规划，仅生成规划产物，不会生成或覆盖应用代码。 */
+    @PostMapping("/app/{appId}/plan")
+    public BaseResponse<GenerationRun> createPlanningRun(@PathVariable Long appId,
+                                                          @RequestBody MultiAgentPlanningRequest planningRequest,
+                                                          HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(planningRequest == null, ErrorCode.PARAMS_ERROR, "规划请求不能为空");
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()), ErrorCode.NO_AUTH_ERROR, "无权规划该应用");
+        return ResultUtils.success(planningAgentService.createPlanningRun(app, loginUser, planningRequest.getMessage()));
     }
 
     /**

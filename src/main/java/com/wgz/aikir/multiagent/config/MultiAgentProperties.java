@@ -15,4 +15,7 @@ public class MultiAgentProperties {
 
     /** M0 阶段仅记录全栈生成的基线运行数据。 */
     private boolean fullstackOnly = true;
+
+    /** 是否允许用户发起 M1 协作规划。 */
+    private boolean planningEnabled = false;
 }

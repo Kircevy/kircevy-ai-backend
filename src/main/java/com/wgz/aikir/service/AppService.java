@@ -7,6 +7,7 @@ import com.wgz.aikir.model.entity.App;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.AppDeploymentVO;
 import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import reactor.core.publisher.Flux;
 
@@ -72,6 +73,21 @@ public interface AppService extends IService<App> {
      * Read the generated project directory tree for its owner.
      */
     List<CodeFileTreeNode> listCodeFileTree(Long appId, User loginUser);
+
+    /**
+     * 查询当前用户的 Docker 部署应用及其实时运行状态。
+     */
+    List<AppDeploymentVO> listMyDockerDeployments(User loginUser);
+
+    /**
+     * 启动当前用户已停止的 Docker 部署应用。
+     */
+    AppDeploymentVO startDockerDeployment(Long appId, User loginUser);
+
+    /**
+     * 停止当前用户正在运行的 Docker 部署应用，但保留容器以便再次启动。
+     */
+    AppDeploymentVO stopDockerDeployment(Long appId, User loginUser);
 
     /**
      * 获取应用封装类列表

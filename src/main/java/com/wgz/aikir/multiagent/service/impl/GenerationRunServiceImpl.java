@@ -9,9 +9,11 @@ import com.wgz.aikir.exception.BusinessException;
 import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.exception.ThrowUtils;
 import com.wgz.aikir.multiagent.mapper.AgentEventMapper;
+import com.wgz.aikir.multiagent.mapper.AgentArtifactMapper;
 import com.wgz.aikir.multiagent.mapper.AgentTaskMapper;
 import com.wgz.aikir.multiagent.mapper.GenerationRunMapper;
 import com.wgz.aikir.multiagent.domain.entity.AgentEvent;
+import com.wgz.aikir.multiagent.domain.entity.AgentArtifact;
 import com.wgz.aikir.multiagent.domain.entity.AgentTask;
 import com.wgz.aikir.model.entity.App;
 import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
@@ -27,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,6 +52,9 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
 
     @Resource
     private AgentTaskMapper agentTaskMapper;
+
+    @Resource
+    private AgentArtifactMapper agentArtifactMapper;
 
     @Resource
     private AgentEventMapper agentEventMapper;
@@ -113,6 +119,192 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
     }
 
     @Override
+    public synchronized GenerationRun startMultiAgentRun(App app, User user, CodeGenTypeEnum codeGenType, String prompt) {
+        ThrowUtils.throwIf(!isEnabledFor(codeGenType) || !multiAgentProperties.isPlanningEnabled(),
+                ErrorCode.NO_AUTH_ERROR, "当前未启用协作规划功能");
+        ThrowUtils.throwIf(hasActiveMultiAgentRun(app.getId(), user.getId()), ErrorCode.OPERATION_ERROR,
+                "当前应用已有协作规划正在执行，请等待完成后再重新生成");
+        LocalDateTime now = LocalDateTime.now();
+        String runId = UUID.randomUUID().toString();
+        GenerationRun run = GenerationRun.builder()
+                .runId(runId)
+                .appId(app.getId())
+                .userId(user.getId())
+                .strategy(GenerationStrategyEnum.MULTI_AGENT.name())
+                .status(GenerationRunStatusEnum.PLANNING.name())
+                .codeGenType(codeGenType.getValue())
+                .promptDigest(SecureUtil.sha256(prompt))
+                .configSnapshot(JSONUtil.toJsonStr(Map.of(
+                        "multiAgentEnabled", true,
+                        "phase", "M1",
+                        "strategy", GenerationStrategyEnum.MULTI_AGENT.name()
+                )))
+                .startedTime(now)
+                .createTime(now)
+                .updateTime(now)
+                .isDelete(0)
+                .build();
+        boolean saved = this.save(run);
+        ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "创建协作规划运行记录失败");
+        appendEvent(runId, null, AgentEventTypeEnum.RUN_STARTED, Map.of(
+                "strategy", GenerationStrategyEnum.MULTI_AGENT.name(),
+                "stage", "PLANNING",
+                "codeGenType", codeGenType.getValue()
+        ));
+        return run;
+    }
+
+    @Override
+    public int recoverInterruptedMultiAgentRuns() {
+        List<GenerationRun> interruptedRuns = new ArrayList<>(this.list(QueryWrapper.create()
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.PLANNING.name())));
+        interruptedRuns.addAll(this.list(QueryWrapper.create()
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.EXECUTING.name())));
+        for (GenerationRun run : interruptedRuns) {
+            finishRun(run.getRunId(), GenerationRunStatusEnum.FAILED,
+                    "服务重启导致协作规划中断，请重新生成协作规划");
+        }
+        return interruptedRuns.size();
+    }
+
+    /**
+     * 同一应用在同一时刻仅允许一个协作规划运行，避免重复调用智能体并产生互相覆盖的规划结果。
+     */
+    private boolean hasActiveMultiAgentRun(Long appId, Long userId) {
+        QueryWrapper planningQuery = QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.PLANNING.name());
+        if (this.count(planningQuery) > 0) {
+            return true;
+        }
+        QueryWrapper executingQuery = QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.EXECUTING.name());
+        return this.count(executingQuery) > 0;
+    }
+
+    @Override
+    public AgentTask createTask(String runId, String taskKey, String role, String dependsOn, String inputArtifacts) {
+        ThrowUtils.throwIf(runId == null || runId.isBlank(), ErrorCode.PARAMS_ERROR, "runId 不能为空");
+        LocalDateTime now = LocalDateTime.now();
+        AgentTask task = AgentTask.builder()
+                .runId(runId)
+                .taskKey(taskKey)
+                .role(role)
+                .status(AgentTaskStatusEnum.PENDING.name())
+                .attempt(1)
+                .dependsOn(dependsOn == null ? "[]" : dependsOn)
+                .inputArtifacts(inputArtifacts == null ? "[]" : inputArtifacts)
+                .outputArtifacts("[]")
+                .createTime(now)
+                .updateTime(now)
+                .isDelete(0)
+                .build();
+        int inserted = agentTaskMapper.insert(task);
+        ThrowUtils.throwIf(inserted != 1, ErrorCode.OPERATION_ERROR, "创建协作任务记录失败");
+        return task;
+    }
+
+    @Override
+    public void startTask(AgentTask task) {
+        ThrowUtils.throwIf(task == null || task.getId() == null, ErrorCode.PARAMS_ERROR, "协作任务不能为空");
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus(AgentTaskStatusEnum.RUNNING.name());
+        task.setStartedTime(now);
+        task.setUpdateTime(now);
+        int updated = agentTaskMapper.update(task);
+        ThrowUtils.throwIf(updated != 1, ErrorCode.OPERATION_ERROR, "更新协作任务状态失败");
+        appendEvent(task.getRunId(), task.getId(), AgentEventTypeEnum.TASK_STARTED, Map.of(
+                "taskKey", task.getTaskKey(),
+                "role", task.getRole()
+        ));
+    }
+
+    @Override
+    public void finishTask(AgentTask task, AgentTaskStatusEnum status, String outputArtifacts, String errorMessage) {
+        ThrowUtils.throwIf(task == null || task.getId() == null, ErrorCode.PARAMS_ERROR, "协作任务不能为空");
+        ThrowUtils.throwIf(status != AgentTaskStatusEnum.SUCCEEDED && status != AgentTaskStatusEnum.FAILED,
+                ErrorCode.PARAMS_ERROR, "任务结束状态不合法");
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus(status.name());
+        task.setOutputArtifacts(outputArtifacts == null ? "[]" : outputArtifacts);
+        task.setErrorMessage(errorMessage);
+        task.setFinishedTime(now);
+        task.setUpdateTime(now);
+        int updated = agentTaskMapper.update(task);
+        ThrowUtils.throwIf(updated != 1, ErrorCode.OPERATION_ERROR, "更新协作任务结果失败");
+        appendEvent(task.getRunId(), task.getId(), status == AgentTaskStatusEnum.SUCCEEDED
+                ? AgentEventTypeEnum.TASK_COMPLETED : AgentEventTypeEnum.TASK_FAILED,
+                Map.of("taskKey", task.getTaskKey(), "status", status.name(),
+                        "error", errorMessage == null ? "" : errorMessage));
+    }
+
+    @Override
+    public AgentArtifact saveArtifact(String runId, Long taskId, String artifactType, String relativePath,
+                                      String summary, String payload) {
+        ThrowUtils.throwIf(runId == null || runId.isBlank(), ErrorCode.PARAMS_ERROR, "runId 不能为空");
+        ThrowUtils.throwIf(artifactType == null || artifactType.isBlank(), ErrorCode.PARAMS_ERROR, "产物类型不能为空");
+        List<AgentArtifact> existingArtifacts = agentArtifactMapper.selectListByQuery(QueryWrapper.create()
+                .eq("runId", runId)
+                .eq("artifactType", artifactType)
+                .orderBy("artifactVersion", false)
+                .limit(1));
+        int nextVersion = existingArtifacts.isEmpty() ? 1 : existingArtifacts.getFirst().getArtifactVersion() + 1;
+        LocalDateTime now = LocalDateTime.now();
+        AgentArtifact artifact = AgentArtifact.builder()
+                .runId(runId)
+                .taskId(taskId)
+                .artifactType(artifactType)
+                .artifactVersion(nextVersion)
+                .relativePath(relativePath)
+                .checksum(SecureUtil.sha256(payload))
+                .summary(summary)
+                .payload(payload)
+                .createTime(now)
+                .updateTime(now)
+                .isDelete(0)
+                .build();
+        int inserted = agentArtifactMapper.insert(artifact);
+        ThrowUtils.throwIf(inserted != 1, ErrorCode.OPERATION_ERROR, "保存协作产物失败");
+        appendEvent(runId, taskId, AgentEventTypeEnum.ARTIFACT_READY, Map.of(
+                "artifactType", artifactType,
+                "artifactVersion", nextVersion,
+                "relativePath", relativePath == null ? "" : relativePath
+        ));
+        return artifact;
+    }
+
+    @Override
+    public void finishRun(String runId, GenerationRunStatusEnum status, String errorMessage) {
+        ThrowUtils.throwIf(runId == null || runId.isBlank(), ErrorCode.PARAMS_ERROR, "runId 不能为空");
+        ThrowUtils.throwIf(status != GenerationRunStatusEnum.SUCCEEDED && status != GenerationRunStatusEnum.FAILED
+                        && status != GenerationRunStatusEnum.PARTIAL && status != GenerationRunStatusEnum.CANCELLED,
+                ErrorCode.PARAMS_ERROR, "运行结束状态不合法");
+        GenerationRun run = this.getOne(QueryWrapper.create().eq("runId", runId));
+        ThrowUtils.throwIf(run == null, ErrorCode.NOT_FOUND_ERROR, "协作运行不存在");
+        if (GenerationRunStatusEnum.SUCCEEDED.name().equals(run.getStatus())
+                || GenerationRunStatusEnum.FAILED.name().equals(run.getStatus())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        run.setStatus(status.name());
+        run.setErrorMessage(errorMessage);
+        run.setFinishedTime(now);
+        run.setUpdateTime(now);
+        this.updateById(run);
+        appendEvent(runId, null, status == GenerationRunStatusEnum.SUCCEEDED
+                ? AgentEventTypeEnum.RUN_SUCCEEDED : AgentEventTypeEnum.RUN_FAILED,
+                Map.of("status", status.name(), "error", errorMessage == null ? "" : errorMessage));
+        eventSequences.remove(runId);
+    }
+
+    @Override
     public void completeDirectRun(String runId) {
         finishDirectRun(runId, GenerationRunStatusEnum.SUCCEEDED, AgentTaskStatusEnum.SUCCEEDED, null);
     }
@@ -153,6 +345,14 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
                 .eq("runId", runId)
                 .gt("eventSeq", sequence)
                 .orderBy("eventSeq", true));
+    }
+
+    @Override
+    public List<AgentArtifact> listArtifactsForOwner(String runId, User user) {
+        getRunForOwner(runId, user);
+        return agentArtifactMapper.selectListByQuery(QueryWrapper.create()
+                .eq("runId", runId)
+                .orderBy("createTime", true));
     }
 
     private boolean isEnabledFor(CodeGenTypeEnum codeGenType) {
@@ -198,7 +398,7 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
     }
 
     private void appendEvent(String runId, Long taskId, AgentEventTypeEnum eventType, Map<String, Object> payload) {
-        long eventSeq = eventSequences.computeIfAbsent(runId, ignored -> new AtomicLong()).incrementAndGet();
+        long eventSeq = eventSequences.computeIfAbsent(runId, this::loadLatestEventSequence).incrementAndGet();
         LocalDateTime now = LocalDateTime.now();
         AgentEvent event = AgentEvent.builder()
                 .runId(runId)
@@ -214,5 +414,15 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
         if (inserted != 1) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "记录协作事件失败");
         }
+    }
+
+    /** 从持久化事件中恢复序号，避免服务重启后产生重复序号。 */
+    private AtomicLong loadLatestEventSequence(String runId) {
+        List<AgentEvent> events = agentEventMapper.selectListByQuery(QueryWrapper.create()
+                .eq("runId", runId)
+                .orderBy("eventSeq", false)
+                .limit(1));
+        long latestSequence = events.isEmpty() ? 0L : events.getFirst().getEventSeq();
+        return new AtomicLong(latestSequence);
     }
 }

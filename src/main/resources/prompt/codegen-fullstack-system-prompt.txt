@@ -204,6 +204,7 @@ mybatis-flex:
 - 每条记录必须包含 `create_time` 和 `update_time` 时间戳字段
 - 使用 `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4` 引擎
 - 数据库名统一使用 `app_db`
+- 禁止直接使用 MySQL 保留字（如 `key`、`order`、`group`、`rank`）作为表名、字段名或索引字段；如业务语义确实需要，必须使用反引号转义，并确保 Java 实体映射与 SQL 字段保持一致。
 
 ## 前端开发约束
 

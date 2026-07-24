@@ -8,7 +8,7 @@ import org.springframework.cache.annotation.EnableCaching;
 
 @EnableCaching
 @SpringBootApplication(exclude = {RedisEmbeddingStoreAutoConfiguration.class})
-@MapperScan("com.wgz.aikir.mapper")
+@MapperScan({"com.wgz.aikir.mapper", "com.wgz.aikir.multiagent.mapper"})
 public class KircevyAiCodeApplication {
 
     public static void main(String[] args) {

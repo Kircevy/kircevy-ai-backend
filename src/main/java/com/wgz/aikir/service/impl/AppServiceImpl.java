@@ -23,6 +23,7 @@ import com.wgz.aikir.model.enums.ChatHistoryMessageTypeEnum;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.AppDeploymentVO;
 import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import com.wgz.aikir.model.vo.UserVO;
 import com.wgz.aikir.monitor.MonitorContext;
@@ -35,6 +36,7 @@ import com.wgz.aikir.service.FrontendPreviewBuildService;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
+import com.wgz.aikir.service.UserNotificationService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -89,6 +91,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private DockerComposeDeployService dockerComposeDeployService;
+
+    @Resource
+    private UserNotificationService userNotificationService;
 
     @Resource
     private ScreenShotService screenShotService;
@@ -204,7 +209,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 7. 按部署模式分发
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         if (deployMode == DeployModeEnum.DOCKER_COMPOSE) {
-            return deployWithDockerCompose(appId, deployKey, sourceDirPath, codeGenTypeEnum);
+            String composeProjectName = "fullstack_" + appId;
+            return deployWithDockerCompose(appId, deployKey, composeProjectName, sourceDirPath, codeGenTypeEnum, loginUser);
         }
         // 默认代码下载模式：构建并部署静态资源（前端预览）
         return deployWithCodeDownload(appId, deployKey, sourceDir, sourceDirPath, codeGenType);
@@ -257,13 +263,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      * Docker 一键部署模式：执行 docker-compose up -d，返回前端访问地址
      * 仅支持 FULLSTACK 类型（包含 docker-compose.yml）
      */
-    private String deployWithDockerCompose(Long appId, String deployKey,
-                                           String sourceDirPath, CodeGenTypeEnum codeGenTypeEnum) {
+    private String deployWithDockerCompose(Long appId, String deployKey, String composeProjectName,
+                                           String sourceDirPath, CodeGenTypeEnum codeGenTypeEnum, User loginUser) {
         // Docker 部署仅支持全栈项目
         ThrowUtils.throwIf(codeGenTypeEnum != CodeGenTypeEnum.FULLSTACK,
                 ErrorCode.PARAMS_ERROR, "Docker 一键部署仅支持全栈项目（FULLSTACK）类型");
         // 执行 Docker Compose 部署
-        DockerComposeDeployService.DockerDeployResult result = dockerComposeDeployService.deploy(sourceDirPath, deployKey);
+        DockerComposeDeployService.DockerDeployResult result = dockerComposeDeployService.deploy(sourceDirPath, composeProjectName);
         if (!result.isSuccess()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Docker 部署失败：" + result.getErrorMessage());
         }
@@ -275,9 +281,81 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         updateApp.setDockerDeployUrl(result.getFrontendUrl());
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
+        try {
+            App app = this.getById(appId);
+            userNotificationService.createDeploymentSuccessNotification(loginUser.getId(), appId,
+                    app == null ? "应用" : app.getAppName(), result.getFrontendUrl());
+        } catch (Exception exception) {
+            log.warn("部署成功通知写入失败，部署结果不受影响，应用 ID: {}", appId, exception);
+        }
         // 调用截图方法并更新数据库（截取前端页面）
         log.info("Docker 一键部署成功，前端: {}，后端: {}", result.getFrontendUrl(), result.getBackendUrl());
         return result.getFrontendUrl();
+    }
+
+    @Override
+    public List<AppDeploymentVO> listMyDockerDeployments(User loginUser) {
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        List<App> deployedApps = this.list(QueryWrapper.create()
+                .eq("userId", loginUser.getId())
+                .isNotNull("dockerDeployUrl")
+                .orderBy("deployedTime", false));
+        return deployedApps.stream().map(this::buildDockerDeploymentVO).toList();
+    }
+
+    @Override
+    public AppDeploymentVO startDockerDeployment(Long appId, User loginUser) {
+        App app = getDockerDeploymentApp(appId, loginUser);
+        String sourceDirPath = getSourceDirPath(app);
+        boolean success = dockerComposeDeployService.start(sourceDirPath, "fullstack_" + appId);
+        ThrowUtils.throwIf(!success, ErrorCode.SYSTEM_ERROR, "启动容器失败，请确认 Docker Desktop 正在运行且容器未被删除");
+        AppDeploymentVO deploymentVO = buildDockerDeploymentVO(app);
+        if (deploymentVO.getFrontendUrl() != null) {
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setDockerDeployUrl(deploymentVO.getFrontendUrl());
+            this.updateById(updateApp);
+        }
+        return deploymentVO;
+    }
+
+    @Override
+    public AppDeploymentVO stopDockerDeployment(Long appId, User loginUser) {
+        App app = getDockerDeploymentApp(appId, loginUser);
+        boolean success = dockerComposeDeployService.stopKeepingContainers(getSourceDirPath(app), "fullstack_" + appId);
+        ThrowUtils.throwIf(!success, ErrorCode.SYSTEM_ERROR, "停止容器失败，请稍后重试");
+        return buildDockerDeploymentVO(app);
+    }
+
+    private App getDockerDeploymentApp(Long appId, User loginUser) {
+        validateAppOwner(appId, loginUser);
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(StrUtil.isBlank(app.getDockerDeployUrl()), ErrorCode.PARAMS_ERROR, "该应用尚未完成 Docker 部署");
+        ThrowUtils.throwIf(CodeGenTypeEnum.FULLSTACK != CodeGenTypeEnum.getEnumByValue(app.getCodeGenType()),
+                ErrorCode.PARAMS_ERROR, "只有全栈应用支持 Docker 容器管理");
+        return app;
+    }
+
+    private AppDeploymentVO buildDockerDeploymentVO(App app) {
+        String sourceDirPath = getSourceDirPath(app);
+        DockerComposeDeployService.DockerRuntimeInfo runtimeInfo = dockerComposeDeployService
+                .getRuntimeInfo(sourceDirPath, "fullstack_" + app.getId());
+        String frontendUrl = StrUtil.blankToDefault(runtimeInfo.getFrontendUrl(), app.getDockerDeployUrl());
+        return AppDeploymentVO.builder()
+                .appId(app.getId())
+                .appName(app.getAppName())
+                .codeGenType(app.getCodeGenType())
+                .composeProjectName("fullstack_" + app.getId())
+                .frontendUrl(frontendUrl)
+                .backendUrl(runtimeInfo.getBackendUrl())
+                .status(runtimeInfo.getStatus())
+                .statusMessage(runtimeInfo.getStatusMessage())
+                .deployedTime(app.getDeployedTime())
+                .build();
+    }
+
+    private String getSourceDirPath(App app) {
+        return AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + app.getCodeGenType() + "_" + app.getId();
     }
 
     /**

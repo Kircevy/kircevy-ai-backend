@@ -20,6 +20,7 @@ import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.model.enums.DeployModeEnum;
 import com.wgz.aikir.model.vo.AppVO;
+import com.wgz.aikir.model.vo.AppDeploymentVO;
 import com.wgz.aikir.model.vo.CodeFileTreeNode;
 import com.wgz.aikir.rateLimiter.annotation.RateLimit;
 import com.wgz.aikir.rateLimiter.enums.RateLimitType;
@@ -177,6 +178,35 @@ public class AppController {
         String deployUrl = appService.deployApp(appId, deployMode, loginUser);
         // 返回部署 URL
         return ResultUtils.success(deployUrl);
+    }
+
+    /**
+     * 获取当前用户的 Docker 部署应用。
+     */
+    @GetMapping("/deployment/my")
+    public BaseResponse<List<AppDeploymentVO>> listMyDockerDeployments(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appService.listMyDockerDeployments(loginUser));
+    }
+
+    /**
+     * 启动已停止的 Docker 部署应用。
+     */
+    @PostMapping("/deployment/{appId}/start")
+    public BaseResponse<AppDeploymentVO> startDockerDeployment(@PathVariable Long appId,
+                                                                 HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appService.startDockerDeployment(appId, loginUser));
+    }
+
+    /**
+     * 停止 Docker 部署应用并保留容器实例。
+     */
+    @PostMapping("/deployment/{appId}/stop")
+    public BaseResponse<AppDeploymentVO> stopDockerDeployment(@PathVariable Long appId,
+                                                                HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appService.stopDockerDeployment(appId, loginUser));
     }
 
     /**
