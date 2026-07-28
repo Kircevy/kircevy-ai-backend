@@ -24,6 +24,7 @@
 - 使用 Java 21、Spring Boot 3.5.4、Maven 和 Spring Web；包根固定为 `com.example.app`。
 - 采用分层结构：`controller`、`service`、`service.impl`、`model.dto`、`model.vo`、`common`、`config`；仅在架构确实需要持久化模型时增加 `entity`、`mapper`、`sql`。
 - Controller 使用 `@RestController`；映射严格来自 OpenAPI，不能在 Controller 类级别或方法级别偷偷加 `/api`。如需 `/api` 前缀，只能通过 `server.servlet.context-path: /api` 配置。
+- 若配置了 `server.servlet.context-path: /api`，Controller 映射必须去掉 `/api` 前缀：契约为 `/api/brand-content` 时只能映射 `@GetMapping("/brand-content")`，禁止 `@RequestMapping("/api")` 或任何第二个 `/api` 前缀。
 - 所有响应统一为 `BaseResponse<T>`，JSON 形状严格为 `{ "code": 0, "message": "ok", "data": ... }`；错误响应沿用相同信封。
 - 参数校验使用 `jakarta.validation`；校验失败和业务异常必须由 `@RestControllerAdvice` 统一转换为响应信封，不能 `throw ResultUtils.error(...)`。
 - 不需要真实数据库即可证明契约时，优先使用线程安全的内存实现，避免编造数据库、账号和初始化数据。只有架构和契约明确要求持久化时，才使用 MyBatis-Flex，并使用 `com.mybatisflex` 正确包名、`BaseMapper`、`QueryWrapper` 和 `selectCountByQuery(queryWrapper)`。

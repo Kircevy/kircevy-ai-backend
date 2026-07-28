@@ -18,6 +18,7 @@ import com.wgz.aikir.multiagent.domain.enums.GenerationRunStatusEnum;
 import com.wgz.aikir.multiagent.execution.ApiContractVerifier;
 import com.wgz.aikir.multiagent.execution.WorkspaceBuildService;
 import com.wgz.aikir.multiagent.execution.WorkspaceFileService;
+import com.wgz.aikir.multiagent.streaming.AgentStreamingResponseCollector;
 import com.wgz.aikir.multiagent.mapper.AgentArtifactMapper;
 import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.multiagent.service.ExecutionAgentWorker;
@@ -73,6 +74,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
 
     @Resource
     private ApiContractVerifier apiContractVerifier;
+
+    @Resource
+    private AgentStreamingResponseCollector streamingResponseCollector;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -144,8 +148,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            List<String> files = workspaceFileService.writeBundle(frontendRoot,
+            String bundle = streamingResponseCollector.collect(run.getRunId(), FRONTEND_TASK_KEY,
                     planningAiServiceFactory.createFrontendExecutionAgent().generateFrontendBundle(inputs.toPrompt()));
+            List<String> files = workspaceFileService.writeBundle(frontendRoot, bundle);
             WorkspaceBuildService.BuildResult build = workspaceBuildService.buildFrontend(frontendRoot);
             if (!build.success()) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "前端构建失败：" + compact(build.summary()));
@@ -172,8 +177,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            List<String> files = workspaceFileService.writeBundle(backendRoot,
+            String bundle = streamingResponseCollector.collect(run.getRunId(), BACKEND_TASK_KEY,
                     planningAiServiceFactory.createBackendExecutionAgent().generateBackendBundle(inputs.toPrompt()));
+            List<String> files = workspaceFileService.writeBundle(backendRoot, bundle);
             WorkspaceBuildService.BuildResult build = workspaceBuildService.compileBackend(backendRoot);
             if (!build.success()) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "后端编译失败：" + compact(build.summary()));

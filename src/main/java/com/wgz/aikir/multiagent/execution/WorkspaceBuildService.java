@@ -36,7 +36,12 @@ public class WorkspaceBuildService {
     private BuildResult execute(Path workingDirectory, List<String> command, int timeoutSeconds) {
         Process process;
         try {
-            process = new ProcessBuilder(command).directory(workingDirectory.toFile()).redirectErrorStream(true).start();
+            ProcessBuilder processBuilder = new ProcessBuilder(command)
+                    .directory(workingDirectory.toFile())
+                    .redirectErrorStream(true);
+            new BuildJdkEnvironment(Path.of(System.getProperty("java.home")))
+                    .apply(processBuilder.environment());
+            process = processBuilder.start();
         } catch (IOException exception) {
             return BuildResult.failed("无法启动构建命令：" + exception.getMessage());
         }

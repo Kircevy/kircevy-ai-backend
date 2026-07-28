@@ -10,6 +10,8 @@ import com.wgz.aikir.multiagent.service.PlanningAgentService;
 import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
+import com.wgz.aikir.multiagent.streaming.AgentOutputStreamEvent;
+import com.wgz.aikir.multiagent.streaming.AgentOutputStreamHub;
 import com.wgz.aikir.service.UserService;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.model.entity.App;
@@ -54,6 +56,9 @@ public class AgentRunController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private AgentOutputStreamHub agentOutputStreamHub;
+
     @GetMapping("/app/{appId}/latest")
     public BaseResponse<GenerationRun> getLatestRun(@PathVariable Long appId, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
@@ -78,6 +83,20 @@ public class AgentRunController {
     public BaseResponse<List<AgentArtifact>> listArtifacts(@PathVariable String runId, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         return ResultUtils.success(generationRunService.listArtifactsForOwner(runId, loginUser));
+    }
+
+    /** 订阅前端与后端执行 Agent 的独立模型输出；重连时先返回当前完整快照。 */
+    @GetMapping(value = "/{runId}/output/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<AgentOutputStreamEvent>> streamAgentOutput(
+            @PathVariable String runId,
+            HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        generationRunService.getRunForOwner(runId, loginUser);
+        return agentOutputStreamHub.subscribe(runId)
+                .map(output -> ServerSentEvent.builder(output)
+                        .id(String.valueOf(output.sequence()))
+                        .event("agent-output")
+                        .build());
     }
 
     /** 发起 M1 协作规划，仅生成规划产物，不会生成或覆盖应用代码。 */

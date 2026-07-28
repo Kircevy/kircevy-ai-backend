@@ -68,6 +68,7 @@ langchain4j:
       api-key: xxx
       model-name: deepseek-chat
       max-tokens: 8192
+      timeout: PT15M
       log-requests: true
       log-responses: true
     # 推理 AI 模型配置（用于复杂的推理任务）
