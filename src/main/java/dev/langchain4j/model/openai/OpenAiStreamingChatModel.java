@@ -15,7 +15,6 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.openai.internal.OpenAiClient;
 import dev.langchain4j.model.openai.internal.chat.*;
-import dev.langchain4j.model.openai.internal.shared.StreamOptions;
 import dev.langchain4j.model.openai.spi.OpenAiStreamingChatModelBuilderFactory;
 
 import java.time.Duration;
@@ -114,9 +113,6 @@ public class OpenAiStreamingChatModel implements StreamingChatModel {
         ChatCompletionRequest openAiRequest =
                 toOpenAiChatRequest(chatRequest, parameters, strictTools, strictJsonSchema)
                         .stream(true)
-                        .streamOptions(StreamOptions.builder()
-                                .includeUsage(true)
-                                .build())
                         .build();
 
         OpenAiStreamingResponseBuilder openAiResponseBuilder = new OpenAiStreamingResponseBuilder();
@@ -136,6 +132,11 @@ public class OpenAiStreamingChatModel implements StreamingChatModel {
                         }
                     }
                     ChatResponse chatResponse = openAiResponseBuilder.build();
+                    if (chatResponse == null) {
+                        handler.onError(new IllegalStateException(
+                                "模型服务以空 SSE 流结束，未返回任何生成内容；请检查 OpenAI 兼容流式接口"));
+                        return;
+                    }
                     try {
                         handler.onCompleteResponse(chatResponse);
                     } catch (Exception e) {
