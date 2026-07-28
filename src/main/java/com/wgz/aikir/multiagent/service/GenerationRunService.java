@@ -57,6 +57,9 @@ public interface GenerationRunService extends IService<GenerationRun> {
 
     GenerationRun getLatestRunForOwner(Long appId, User user);
 
+    /** 判断应用是否已创建过任意生成运行。 */
+    boolean hasAnyRun(Long appId, Long userId);
+
     List<AgentEvent> listEventsForOwner(String runId, Long afterSequence, User user);
 
     /** 查询当前用户有权访问的协作产物。 */

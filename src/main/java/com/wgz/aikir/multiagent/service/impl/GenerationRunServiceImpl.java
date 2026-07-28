@@ -347,6 +347,13 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
     }
 
     @Override
+    public boolean hasAnyRun(Long appId, Long userId) {
+        return this.count(QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)) > 0;
+    }
+
+    @Override
     public List<AgentEvent> listEventsForOwner(String runId, Long afterSequence, User user) {
         getRunForOwner(runId, user);
         long sequence = afterSequence == null ? 0L : Math.max(0L, afterSequence);

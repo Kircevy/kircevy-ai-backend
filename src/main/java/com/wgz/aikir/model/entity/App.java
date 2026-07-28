@@ -61,6 +61,12 @@ public class App implements Serializable {
     private String codeGenType;
 
     /**
+     * 生成方式：DIRECT 或 MULTI_AGENT
+     */
+    @Column("generationStrategy")
+    private String generationStrategy;
+
+    /**
      * 部署标识
      */
     @Column("deployKey")

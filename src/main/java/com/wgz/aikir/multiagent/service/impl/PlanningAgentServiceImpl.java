@@ -24,6 +24,7 @@ import com.wgz.aikir.multiagent.service.PlanningAgentService;
 import com.wgz.aikir.multiagent.service.PlanningAgentWorker;
 import com.wgz.aikir.multiagent.config.MultiAgentProperties;
 import com.wgz.aikir.multiagent.validation.StructuredPlanningValidator;
+import com.wgz.aikir.multiagent.strategy.GenerationStrategyPolicy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -67,6 +68,9 @@ public class PlanningAgentServiceImpl implements PlanningAgentService {
     @Resource
     private ExecutionAgentService executionAgentService;
 
+    @Resource
+    private GenerationStrategyPolicy generationStrategyPolicy;
+
     @Override
     public GenerationRun createPlanningRun(App app, User user, String message, boolean autoExecute) {
         ThrowUtils.throwIf(app == null || app.getId() == null, ErrorCode.PARAMS_ERROR, "应用不能为空");
@@ -75,6 +79,7 @@ public class PlanningAgentServiceImpl implements PlanningAgentService {
         CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         ThrowUtils.throwIf(codeGenType != CodeGenTypeEnum.FULLSTACK, ErrorCode.PARAMS_ERROR,
                 "协作规划当前仅支持全栈工程模式");
+        generationStrategyPolicy.requireMultiAgentSelected(app);
         ThrowUtils.throwIf(autoExecute && !multiAgentProperties.isExecutionEnabled(), ErrorCode.NO_AUTH_ERROR,
                 "当前未启用协作执行功能");
 

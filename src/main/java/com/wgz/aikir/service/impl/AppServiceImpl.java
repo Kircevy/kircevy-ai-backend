@@ -36,6 +36,7 @@ import com.wgz.aikir.service.FrontendPreviewBuildService;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.multiagent.service.PlanningAgentService;
 import com.wgz.aikir.multiagent.config.MultiAgentProperties;
+import com.wgz.aikir.multiagent.strategy.GenerationStrategyPolicy;
 import com.wgz.aikir.service.ScreenShotService;
 import com.wgz.aikir.service.UserService;
 import com.wgz.aikir.service.UserNotificationService;
@@ -115,6 +116,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private MultiAgentProperties multiAgentProperties;
 
+    @Resource
+    private GenerationStrategyPolicy generationStrategyPolicy;
+
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -140,7 +144,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
         // 6. 设置监控上下文（埋点）
         MonitorContextHolder.setContextHolder(new MonitorContext(loginUser.getId().toString(), appId.toString()));
-        if (shouldAutoStartMultiAgent(codeGenTypeEnum)) {
+        if (generationStrategyPolicy.isMultiAgentSelected(app)) {
+            ThrowUtils.throwIf(!generationStrategyPolicy.shouldStartMultiAgent(app, multiAgentProperties),
+                    ErrorCode.NO_AUTH_ERROR, "协作生成功能当前未启用，请重新选择快速生成");
             var run = planningAgentService.createPlanningRun(app, loginUser, message, true);
             String response = "已启动多 Agent 协作任务（运行 ID：" + run.getRunId()
                     + "）。系统会先完成 M1 规划，再自动并行生成前端和后端；请在右侧“协作过程”查看实时进度。";
@@ -166,16 +172,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                             MonitorContextHolder.clearContext();
                           });
         return codeGenerationTaskService.start(appId, handledStream);
-    }
-
-    /**
-     * M2 开关开启时，首页的首次生成请求直接进入 M1→M2；其余模式保持原有单 Agent 代码流。
-     */
-    private boolean shouldAutoStartMultiAgent(CodeGenTypeEnum codeGenType) {
-        return codeGenType == CodeGenTypeEnum.FULLSTACK
-                && multiAgentProperties.isEnabled()
-                && multiAgentProperties.isPlanningEnabled()
-                && multiAgentProperties.isExecutionEnabled();
     }
 
     @Override
