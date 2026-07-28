@@ -56,4 +56,18 @@ class AgentOutputStreamHubTest {
         assertEquals(14, frontend.length());
         assertEquals(12, backend.length());
     }
+
+    @Test
+    void completeResponseCanReplaceAnIncompletePartialStream() {
+        AgentOutputStreamHub hub = new AgentOutputStreamHub();
+        hub.append("run-3", "backend_generation", "incomplete");
+        hub.replace("run-3", "backend_generation", "complete-source");
+
+        AgentOutputStreamEvent snapshot = hub.subscribe("run-3")
+                .take(1)
+                .blockFirst(Duration.ofSeconds(1));
+
+        assertEquals("SNAPSHOT", snapshot.eventType());
+        assertEquals("complete-source", snapshot.content());
+    }
 }

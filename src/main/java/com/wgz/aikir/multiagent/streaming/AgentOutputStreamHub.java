@@ -34,6 +34,19 @@ public class AgentOutputStreamHub {
         }
     }
 
+    /** 使用模型完成事件中的完整文本修正可能缺失的增量流。 */
+    public void replace(String runId, String taskKey, String content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        RunOutputState state = state(runId);
+        synchronized (state) {
+            state.outputs.put(taskKey, new StringBuffer(content));
+            long sequence = state.sequence.incrementAndGet();
+            state.sink.tryEmitNext(new AgentOutputStreamEvent(sequence, runId, taskKey, "SNAPSHOT", content));
+        }
+    }
+
     public Flux<AgentOutputStreamEvent> subscribe(String runId) {
         return Flux.defer(() -> {
             RunOutputState state = state(runId);

@@ -19,6 +19,7 @@ import com.wgz.aikir.multiagent.execution.ApiContractVerifier;
 import com.wgz.aikir.multiagent.execution.WorkspaceBuildService;
 import com.wgz.aikir.multiagent.execution.WorkspaceFileService;
 import com.wgz.aikir.multiagent.streaming.AgentStreamingResponseCollector;
+import com.wgz.aikir.multiagent.streaming.AgentOutputStreamHub;
 import com.wgz.aikir.multiagent.mapper.AgentArtifactMapper;
 import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.multiagent.service.ExecutionAgentWorker;
@@ -48,6 +49,8 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
 
     private static final String FRONTEND_TASK_KEY = "frontend_generation";
     private static final String BACKEND_TASK_KEY = "backend_generation";
+    private static final String FRONTEND_MANIFEST_STREAM_KEY = "frontend_manifest";
+    private static final String BACKEND_MANIFEST_STREAM_KEY = "backend_manifest";
     private static final String INTEGRATION_TASK_KEY = "integration";
     private static final String PRODUCT_SPEC = "PRODUCT_SPEC";
     private static final String ARCHITECTURE = "ARCHITECTURE";
@@ -77,6 +80,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
 
     @Resource
     private AgentStreamingResponseCollector streamingResponseCollector;
+
+    @Resource
+    private AgentOutputStreamHub agentOutputStreamHub;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -148,9 +154,7 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            String bundle = streamingResponseCollector.collect(run.getRunId(), FRONTEND_TASK_KEY,
-                    planningAiServiceFactory.createFrontendExecutionAgent().generateFrontendBundle(inputs.toPrompt()));
-            List<String> files = workspaceFileService.writeBundle(frontendRoot, bundle);
+            List<String> files = generateFrontendFiles(run, inputs, frontendRoot);
             WorkspaceBuildService.BuildResult build = workspaceBuildService.buildFrontend(frontendRoot);
             if (!build.success()) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "前端构建失败：" + compact(build.summary()));
@@ -177,9 +181,7 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            String bundle = streamingResponseCollector.collect(run.getRunId(), BACKEND_TASK_KEY,
-                    planningAiServiceFactory.createBackendExecutionAgent().generateBackendBundle(inputs.toPrompt()));
-            List<String> files = workspaceFileService.writeBundle(backendRoot, bundle);
+            List<String> files = generateBackendFiles(run, inputs, backendRoot);
             WorkspaceBuildService.BuildResult build = workspaceBuildService.compileBackend(backendRoot);
             if (!build.success()) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "后端编译失败：" + compact(build.summary()));
@@ -193,6 +195,51 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
             generationRunService.finishTask(task, AgentTaskStatusEnum.FAILED, "[]", safeMessage(exception));
             return TaskResult.failed(safeMessage(exception));
         }
+    }
+
+    private List<String> generateFrontendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
+        String manifest = streamingResponseCollector.collect(run.getRunId(), FRONTEND_MANIFEST_STREAM_KEY,
+                planningAiServiceFactory.createFrontendManifestAgent().generateFrontendFileManifest(inputs.toPrompt()));
+        saveRawResponse(run, FRONTEND_TASK_KEY, "manifest", manifest);
+        List<String> files = workspaceFileService.parseFileManifest(manifest);
+        String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
+        for (int index = 0; index < files.size(); index++) {
+            String path = files.get(index);
+            agentOutputStreamHub.append(run.getRunId(), FRONTEND_TASK_KEY, "\n\n// " + path + "\n");
+            String source = streamingResponseCollector.collect(run.getRunId(), FRONTEND_TASK_KEY,
+                    planningAiServiceFactory.createFrontendExecutionAgent().generateFrontendSourceFile(
+                            projectContext + "\n\ntarget-file: " + path));
+            saveRawResponse(run, FRONTEND_TASK_KEY, "file-" + index, source);
+            workspaceFileService.writeFile(workspace, path, source);
+        }
+        return files;
+    }
+
+    private List<String> generateBackendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
+        String manifest = streamingResponseCollector.collect(run.getRunId(), BACKEND_MANIFEST_STREAM_KEY,
+                planningAiServiceFactory.createBackendManifestAgent().generateBackendFileManifest(inputs.toPrompt()));
+        saveRawResponse(run, BACKEND_TASK_KEY, "manifest", manifest);
+        List<String> files = workspaceFileService.parseFileManifest(manifest);
+        String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
+        for (int index = 0; index < files.size(); index++) {
+            String path = files.get(index);
+            agentOutputStreamHub.append(run.getRunId(), BACKEND_TASK_KEY, "\n\n// " + path + "\n");
+            String source = streamingResponseCollector.collect(run.getRunId(), BACKEND_TASK_KEY,
+                    planningAiServiceFactory.createBackendExecutionAgent().generateBackendSourceFile(
+                            projectContext + "\n\ntarget-file: " + path));
+            saveRawResponse(run, BACKEND_TASK_KEY, "file-" + index, source);
+            workspaceFileService.writeFile(workspace, path, source);
+        }
+        return files;
+    }
+
+    private void saveRawResponse(GenerationRun run, String taskKey, String stage, String content) throws IOException {
+        Path directory = runRoot(run.getRunId()).resolve("diagnostics").resolve(taskKey).normalize();
+        if (!directory.startsWith(runRoot(run.getRunId()))) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "诊断响应写入路径不合法");
+        }
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve(stage + ".txt"), content, StandardCharsets.UTF_8);
     }
 
     private void integrateAndPromote(GenerationRun run, PlanningInputs inputs, Path frontendRoot, Path backendRoot)

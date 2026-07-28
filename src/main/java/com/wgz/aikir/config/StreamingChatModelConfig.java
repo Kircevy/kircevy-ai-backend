@@ -40,6 +40,16 @@ public class StreamingChatModelConfig {
     @Bean
     @Scope("prototype")
     public StreamingChatModel streamingChatModelPrototype() {
+        return builder().build();
+    }
+
+    @Bean
+    @Scope("prototype")
+    public StreamingChatModel executionManifestStreamingChatModelPrototype() {
+        return builder().responseFormat("json_object").build();
+    }
+
+    private OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder() {
         OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder = OpenAiStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
@@ -52,6 +62,6 @@ public class StreamingChatModelConfig {
         if (timeout != null) {
             builder.timeout(timeout);
         }
-        return builder.build();
+        return builder;
     }
 }

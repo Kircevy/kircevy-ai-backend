@@ -5,8 +5,10 @@ import com.wgz.aikir.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -14,31 +16,30 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class WorkspaceFileServiceTest {
 
     @TempDir
-    Path temporaryDirectory;
+    Path workspace;
 
-    private final WorkspaceFileService workspaceFileService = new WorkspaceFileService(new ObjectMapper());
+    private final WorkspaceFileService service = new WorkspaceFileService(new ObjectMapper());
 
     @Test
-    void shouldWriteOnlyRelativeFilesInsideWorkspace() throws Exception {
-        var written = workspaceFileService.writeBundle(temporaryDirectory,
-                "{\"files\":[{\"path\":\"src/main.ts\",\"content\":\"export {}\"}]}");
+    void acceptsASmallFileManifestAndWritesEachSourceFileIndependently() throws IOException {
+        List<String> paths = service.parseFileManifest("""
+                {"files":["package.json","src/main.ts"]}
+                """);
 
-        assertEquals(java.util.List.of("src/main.ts"), written);
-        assertEquals("export {}", Files.readString(temporaryDirectory.resolve("src/main.ts")));
+        service.writeFile(workspace, paths.getFirst(), "{\"scripts\":{}}");
+        service.writeFile(workspace, paths.get(1), "console.log('ready');");
+
+        assertEquals(List.of("package.json", "src/main.ts"), paths);
+        assertEquals("console.log('ready');", Files.readString(workspace.resolve("src/main.ts")));
     }
 
     @Test
-    void shouldRejectPathTraversal() {
-        assertThrows(BusinessException.class, () -> workspaceFileService.writeBundle(temporaryDirectory,
-                "{\"files\":[{\"path\":\"../outside.txt\",\"content\":\"blocked\"}]}"));
-    }
-
-    @Test
-    void shouldRejectDuplicatePathsAndUnexpectedFields() {
-        assertThrows(BusinessException.class, () -> workspaceFileService.writeBundle(temporaryDirectory,
-                "{\"files\":[{\"path\":\"src/a.ts\",\"content\":\"one\"},"
-                        + "{\"path\":\"src/a.ts\",\"content\":\"two\"}]}"));
-        assertThrows(BusinessException.class, () -> workspaceFileService.writeBundle(temporaryDirectory,
-                "{\"files\":[],\"explanation\":\"not allowed\"}"));
+    void rejectsDuplicateOrUnsafePathsBeforeAnySourceFileIsWritten() {
+        assertThrows(BusinessException.class, () -> service.parseFileManifest("""
+                {"files":["src/main.ts","../outside.ts"]}
+                """));
+        assertThrows(BusinessException.class, () -> service.parseFileManifest("""
+                {"files":["src/main.ts","src/main.ts"]}
+                """));
     }
 }

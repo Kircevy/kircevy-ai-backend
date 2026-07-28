@@ -1,6 +1,7 @@
 package com.wgz.aikir.multiagent.streaming;
 
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.service.TokenStream;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,6 +43,27 @@ class AgentStreamingResponseCollectorTest {
 
         assertEquals("file-a-file-b", response);
         assertEquals("file-a-file-b", snapshots.getFirst().content());
+    }
+
+    @Test
+    void fallsBackToTheCompleteResponseWhenTheProviderDoesNotPublishPartialChunks() {
+        TokenStream tokenStream = mock(TokenStream.class);
+        ArgumentCaptor<Consumer<String>> partialCaptor = consumerCaptor();
+        ArgumentCaptor<Consumer<ChatResponse>> completeCaptor = consumerCaptor();
+        when(tokenStream.onPartialResponse(partialCaptor.capture())).thenReturn(tokenStream);
+        when(tokenStream.onCompleteResponse(completeCaptor.capture())).thenReturn(tokenStream);
+        when(tokenStream.onError(any())).thenReturn(tokenStream);
+        doAnswer(invocation -> {
+            completeCaptor.getValue().accept(ChatResponse.builder()
+                    .aiMessage(AiMessage.from("complete-source"))
+                    .build());
+            return null;
+        }).when(tokenStream).start();
+
+        String response = new AgentStreamingResponseCollector(new AgentOutputStreamHub())
+                .collect("run-4", "backend_generation", tokenStream);
+
+        assertEquals("complete-source", response);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

@@ -25,7 +25,16 @@ public class AgentStreamingResponseCollector {
                     response.append(partialResponse);
                     outputStreamHub.append(runId, taskKey, partialResponse);
                 })
-                .onCompleteResponse(ignored -> completion.complete(response.toString()))
+                .onCompleteResponse(completeResponse -> {
+                    String completeText = completeResponse.aiMessage() == null
+                            ? "" : completeResponse.aiMessage().text();
+                    String collectedText = response.toString();
+                    String resolvedText = completeText == null || completeText.isBlank() ? collectedText : completeText;
+                    if (!resolvedText.equals(collectedText)) {
+                        outputStreamHub.replace(runId, taskKey, resolvedText);
+                    }
+                    completion.complete(resolvedText);
+                })
                 .onError(completion::completeExceptionally)
                 .start();
         try {
