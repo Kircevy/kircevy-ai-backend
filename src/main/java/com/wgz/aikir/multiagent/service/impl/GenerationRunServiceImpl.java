@@ -162,6 +162,9 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
         interruptedRuns.addAll(this.list(QueryWrapper.create()
                 .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
                 .eq("status", GenerationRunStatusEnum.EXECUTING.name())));
+        interruptedRuns.addAll(this.list(QueryWrapper.create()
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.BUILDING.name())));
         for (GenerationRun run : interruptedRuns) {
             finishRun(run.getRunId(), GenerationRunStatusEnum.FAILED,
                     "服务重启导致协作规划中断，请重新生成协作规划");
@@ -278,6 +281,12 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
                 "relativePath", relativePath == null ? "" : relativePath
         ));
         return artifact;
+    }
+
+    @Override
+    public void publishEvent(String runId, Long taskId, String eventType, Map<String, Object> payload) {
+        ThrowUtils.throwIf(eventType == null || eventType.isBlank(), ErrorCode.PARAMS_ERROR, "事件类型不能为空");
+        appendEvent(runId, taskId, AgentEventTypeEnum.valueOf(eventType), payload == null ? Map.of() : payload);
     }
 
     @Override

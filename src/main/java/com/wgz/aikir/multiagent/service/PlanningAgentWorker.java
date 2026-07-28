@@ -14,7 +14,7 @@ public class PlanningAgentWorker {
     private PlanningAgentService planningAgentService;
 
     @Async("multiAgentPlanningExecutor")
-    public void execute(GenerationRun run, User user, String message) {
-        planningAgentService.executePlanningRun(run, user, message);
+    public void execute(GenerationRun run, User user, String message, boolean autoExecute) {
+        planningAgentService.executePlanningRun(run, user, message, autoExecute);
     }
 }

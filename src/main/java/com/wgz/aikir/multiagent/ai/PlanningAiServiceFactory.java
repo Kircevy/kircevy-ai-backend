@@ -21,7 +21,25 @@ public class PlanningAiServiceFactory {
                 .build();
     }
 
+    /** M2 代码执行使用无工具模型，文件写入统一由受限工作区服务完成。 */
+    public FrontendExecutionAiService createFrontendExecutionAgent() {
+        return AiServices.builder(FrontendExecutionAiService.class)
+                .chatModel(createExecutionModel())
+                .build();
+    }
+
+    /** M2 代码执行使用无工具模型，文件写入统一由受限工作区服务完成。 */
+    public BackendExecutionAiService createBackendExecutionAgent() {
+        return AiServices.builder(BackendExecutionAiService.class)
+                .chatModel(createExecutionModel())
+                .build();
+    }
+
     private ChatModel createPlanningModel() {
         return SpringContextUtil.getBean("routingChatModelPrototype", ChatModel.class);
+    }
+
+    private ChatModel createExecutionModel() {
+        return SpringContextUtil.getBean("openAiChatModel", ChatModel.class);
     }
 }

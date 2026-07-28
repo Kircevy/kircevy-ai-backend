@@ -14,4 +14,7 @@ public class MultiAgentSettingsUpdateRequest {
 
     /** 是否允许创建 M1 协作规划。 */
     private Boolean planningEnabled;
+
+    /** 是否允许冻结的规划进入 M2 并行执行。 */
+    private Boolean executionEnabled;
 }

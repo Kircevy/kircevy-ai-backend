@@ -18,4 +18,7 @@ public class MultiAgentProperties {
 
     /** 是否允许用户发起 M1 协作规划。 */
     private boolean planningEnabled = false;
+
+    /** 是否允许已冻结的 M1 规划进入 M2 并行执行。 */
+    private boolean executionEnabled = false;
 }

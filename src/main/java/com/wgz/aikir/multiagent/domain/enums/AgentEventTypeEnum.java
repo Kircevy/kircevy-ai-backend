@@ -6,6 +6,7 @@ public enum AgentEventTypeEnum {
     TASK_COMPLETED,
     TASK_FAILED,
     ARTIFACT_READY,
+    PREVIEW_READY,
     RUN_SUCCEEDED,
     RUN_FAILED
 }

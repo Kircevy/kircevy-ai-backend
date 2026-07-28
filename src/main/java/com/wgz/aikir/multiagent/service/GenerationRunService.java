@@ -12,6 +12,7 @@ import com.wgz.aikir.multiagent.domain.enums.AgentTaskStatusEnum;
 import com.wgz.aikir.multiagent.domain.enums.GenerationRunStatusEnum;
 
 import java.util.List;
+import java.util.Map;
 
 /** 二阶段运行记录与事件的持久化服务接口。 */
 public interface GenerationRunService extends IService<GenerationRun> {
@@ -41,6 +42,9 @@ public interface GenerationRunService extends IService<GenerationRun> {
     /** 保存版本化协作产物并发布产物就绪事件。 */
     AgentArtifact saveArtifact(String runId, Long taskId, String artifactType, String relativePath,
                                String summary, String payload);
+
+    /** 发布可重放事件，供 M2 的提前预览和后续阶段复用。 */
+    void publishEvent(String runId, Long taskId, String eventType, Map<String, Object> payload);
 
     /** 更新运行状态并发布运行结束事件。 */
     void finishRun(String runId, GenerationRunStatusEnum status, String errorMessage);

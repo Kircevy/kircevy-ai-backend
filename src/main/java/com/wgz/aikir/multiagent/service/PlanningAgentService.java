@@ -8,8 +8,8 @@ import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
 public interface PlanningAgentService {
 
     /** 生成并持久化四类规划产物，不生成或修改应用代码。 */
-    GenerationRun createPlanningRun(App app, User user, String message);
+    GenerationRun createPlanningRun(App app, User user, String message, boolean autoExecute);
 
     /** 由独立线程执行产品与架构规划。 */
-    void executePlanningRun(GenerationRun run, User user, String message);
+    void executePlanningRun(GenerationRun run, User user, String message, boolean autoExecute);
 }

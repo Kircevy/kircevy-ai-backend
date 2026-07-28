@@ -7,6 +7,7 @@ import com.wgz.aikir.multiagent.domain.entity.AgentArtifact;
 import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
 import com.wgz.aikir.multiagent.model.request.MultiAgentPlanningRequest;
 import com.wgz.aikir.multiagent.service.PlanningAgentService;
+import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
 import com.wgz.aikir.service.UserService;
@@ -43,6 +44,9 @@ public class AgentRunController {
 
     @Resource
     private PlanningAgentService planningAgentService;
+
+    @Resource
+    private ExecutionAgentService executionAgentService;
 
     @Resource
     private AppService appService;
@@ -86,7 +90,15 @@ public class AgentRunController {
         App app = appService.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()), ErrorCode.NO_AUTH_ERROR, "无权规划该应用");
-        return ResultUtils.success(planningAgentService.createPlanningRun(app, loginUser, planningRequest.getMessage()));
+        return ResultUtils.success(planningAgentService.createPlanningRun(app, loginUser, planningRequest.getMessage(),
+                planningRequest.isAutoExecute()));
+    }
+
+    /** 基于已冻结的 M1 规划产物发起 M2 并行执行。 */
+    @PostMapping("/{runId}/execute")
+    public BaseResponse<GenerationRun> executePlanningRun(@PathVariable String runId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(executionAgentService.startExecutionRun(runId, loginUser));
     }
 
     /**
