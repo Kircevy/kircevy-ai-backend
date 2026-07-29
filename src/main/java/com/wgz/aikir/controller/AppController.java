@@ -35,6 +35,8 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import com.wgz.aikir.model.entity.App;
 import com.wgz.aikir.service.AppService;
+import com.wgz.aikir.service.AppGenerationStrategyService;
+import com.wgz.aikir.multiagent.domain.enums.GenerationStrategyEnum;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -63,6 +65,9 @@ public class AppController {
 
     @Resource
     private AiCodeGenTypeRoutingServiceFactory aiCodeGenTypeRoutingServiceFactory;
+
+    @Resource
+    private AppGenerationStrategyService appGenerationStrategyService;
 
     /**
      * 下载应用代码
@@ -235,10 +240,23 @@ public class AppController {
         AiCodeGenTypeRoutingService aiCodeGenTypeRoutingService = aiCodeGenTypeRoutingServiceFactory.createAiCodeGenTypeRoutingService();
         CodeGenTypeEnum codeGenTypeEnum = aiCodeGenTypeRoutingService.routeCodeGenType(initPrompt);
         app.setCodeGenType(codeGenTypeEnum.getValue());
+        app.setGenerationStrategy(GenerationStrategyEnum.DIRECT.name());
         // 插入数据库
         boolean result = appService.save(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(app.getId());
+    }
+
+    /** 在首次生成前保存用户选择的生成方式。 */
+    @PostMapping("/generation-strategy")
+    public BaseResponse<AppVO> selectGenerationStrategy(
+            @RequestBody AppGenerationStrategyUpdateRequest strategyRequest,
+            HttpServletRequest request) {
+        ThrowUtils.throwIf(strategyRequest == null, ErrorCode.PARAMS_ERROR, "生成方式请求不能为空");
+        User loginUser = userService.getLoginUser(request);
+        App app = appGenerationStrategyService.select(
+                strategyRequest.getAppId(), strategyRequest.getGenerationStrategy(), loginUser);
+        return ResultUtils.success(appService.getAppVO(app));
     }
 
     /**

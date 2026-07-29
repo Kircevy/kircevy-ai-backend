@@ -49,6 +49,7 @@ public class MultiAgentSettingsServiceImpl implements MultiAgentSettingsService 
             multiAgentProperties.setEnabled(readBoolean(settings, "enabled", multiAgentProperties.isEnabled()));
             multiAgentProperties.setFullstackOnly(readBoolean(settings, "fullstack-only", multiAgentProperties.isFullstackOnly()));
             multiAgentProperties.setPlanningEnabled(readBoolean(settings, "planning-enabled", multiAgentProperties.isPlanningEnabled()));
+            multiAgentProperties.setExecutionEnabled(readBoolean(settings, "execution-enabled", multiAgentProperties.isExecutionEnabled()));
             log.info("已加载多智能体外部配置：{}", settingsFile);
         } catch (Exception exception) {
             log.error("加载多智能体外部配置失败，继续使用 application.yml 默认值：{}", settingsFile, exception);
@@ -60,7 +61,8 @@ public class MultiAgentSettingsServiceImpl implements MultiAgentSettingsService 
         return new MultiAgentSettingsVO(
                 multiAgentProperties.isEnabled(),
                 multiAgentProperties.isFullstackOnly(),
-                multiAgentProperties.isPlanningEnabled());
+                multiAgentProperties.isPlanningEnabled(),
+                multiAgentProperties.isExecutionEnabled());
     }
 
     @Override
@@ -75,6 +77,9 @@ public class MultiAgentSettingsServiceImpl implements MultiAgentSettingsService 
         if (request.getPlanningEnabled() != null) {
             multiAgentProperties.setPlanningEnabled(request.getPlanningEnabled());
         }
+        if (request.getExecutionEnabled() != null) {
+            multiAgentProperties.setExecutionEnabled(request.getExecutionEnabled());
+        }
         persistSettings();
         return getSettings();
     }
@@ -84,6 +89,7 @@ public class MultiAgentSettingsServiceImpl implements MultiAgentSettingsService 
         settings.put("enabled", multiAgentProperties.isEnabled());
         settings.put("fullstack-only", multiAgentProperties.isFullstackOnly());
         settings.put("planning-enabled", multiAgentProperties.isPlanningEnabled());
+        settings.put("execution-enabled", multiAgentProperties.isExecutionEnabled());
         Map<String, Object> root = Map.of("multi-agent", settings);
         String yamlContent = new Yaml().dump(root);
         try {

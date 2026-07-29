@@ -57,6 +57,10 @@ langchain4j:
 #      strict-json-schema: true
 #      response-format: json_object
       max-tokens: 8192
+      # M2 会一次性接收完整文件包，不能使用同步客户端的默认短读超时。
+      timeout: PT15M
+      # 超时重试会重复提交大型生成请求，交由上层按任务语义决定是否重试。
+      max-retries: 0
       log-requests: true
       log-responses: true
     streaming-chat-model:
@@ -64,6 +68,7 @@ langchain4j:
       api-key: xxx
       model-name: deepseek-chat
       max-tokens: 8192
+      timeout: PT15M
       log-requests: true
       log-responses: true
     # 推理 AI 模型配置（用于复杂的推理任务）
@@ -119,3 +124,4 @@ multi-agent:
   enabled: false
   fullstack-only: true
   planning-enabled: false
+  execution-enabled: false

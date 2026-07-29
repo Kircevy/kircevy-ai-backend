@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * AI 代码生成门面类，组合代码生成和保存功能
@@ -174,6 +175,14 @@ public class AiCodeGeneratorFacade {
      */
    private Flux<String> processTokenStream(TokenStream tokenStream, Long appId, CodeGenTypeEnum codeGenTypeEnum){
         return Flux.create(sink -> {
+            AtomicBoolean hasExecutedTool = new AtomicBoolean(false);
+            AtomicBoolean terminalHandled = new AtomicBoolean(false);
+            Runnable completeGeneration = () -> {
+                if (!terminalHandled.compareAndSet(false, true)) {
+                    return;
+                }
+                completeProjectGeneration(sink, appId, codeGenTypeEnum);
+            };
             tokenStream.onPartialResponse((String partialResponse) -> {
                 AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                 sink.next(JSONUtil.toJsonStr(aiResponseMessage));
@@ -181,35 +190,60 @@ public class AiCodeGeneratorFacade {
                 ToolRequestMessage toolRequestMessage = new ToolRequestMessage(toolExecutionRequest);
                 sink.next(JSONUtil.toJsonStr(toolRequestMessage));
             }).onToolExecuted((ToolExecution toolExecution) -> {
+                hasExecutedTool.set(true);
                 ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
                 sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
             }).onCompleteResponse((ChatResponse response) -> {
-                // 根据生成类型执行后处理
-                String projectDirName = codeGenTypeEnum.getValue() + "_" + appId;
-                String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + projectDirName;
-                if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
-                    // Vue 项目需要执行 npm install + build
-                    boolean buildSuccess = vueProjectBuilder.buildProject(projectPath);
-                    if (!buildSuccess) {
-                        log.error("Vue 项目构建失败，路径: {}", projectPath);
-                        sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] Vue 项目构建失败，请检查生成的代码")));
-                    }
-                } else if (codeGenTypeEnum == CodeGenTypeEnum.SPRINGBOOT) {
-                    log.info("Spring Boot 项目生成完成，项目路径: {}", projectPath);
-                    // Spring Boot 项目不需要自动构建，由 MavenTool 在生成过程中按需调用
-                } else if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
-                    // 全栈项目：校验目录结构 + 后端编译 + 前端构建
-                    boolean buildSuccess = fullStackProjectBuilder.buildProject(projectPath);
-                    if (!buildSuccess) {
-                        log.error("全栈项目构建失败，路径: {}", projectPath);
-                        sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] 全栈项目构建失败，请检查生成的代码")));
-                    }
-                }
-                sink.complete();
+                completeGeneration.run();
             }).onError((Throwable error) -> {
-                error.printStackTrace();
+                if (hasExecutedTool.get() && isTerminalEmptyStream(error)) {
+                    log.warn("工具型代码生成已执行文件操作，模型以空流结束，按正常收尾处理，appId：{}", appId);
+                    completeGeneration.run();
+                    return;
+                }
+                log.error("代码生成流失败，appId：{}", appId, error);
                 sink.error(error);
             }).start();
         });
+    }
+
+    /**
+     * 完成工具型工程生成后的构建校验。该方法只允许由同一 TokenStream 的终止路径调用一次。
+     */
+    private void completeProjectGeneration(reactor.core.publisher.FluxSink<String> sink, Long appId,
+                                           CodeGenTypeEnum codeGenTypeEnum) {
+        String projectDirName = codeGenTypeEnum.getValue() + "_" + appId;
+        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + projectDirName;
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            boolean buildSuccess = vueProjectBuilder.buildProject(projectPath);
+            if (!buildSuccess) {
+                log.error("Vue 项目构建失败，路径: {}", projectPath);
+                sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] Vue 项目构建失败，请检查生成的代码")));
+            }
+        } else if (codeGenTypeEnum == CodeGenTypeEnum.SPRINGBOOT) {
+            log.info("Spring Boot 项目生成完成，项目路径: {}", projectPath);
+        } else if (codeGenTypeEnum == CodeGenTypeEnum.FULLSTACK) {
+            boolean buildSuccess = fullStackProjectBuilder.buildProject(projectPath);
+            if (!buildSuccess) {
+                log.error("全栈项目构建失败，路径: {}", projectPath);
+                sink.next(JSONUtil.toJsonStr(new AiResponseMessage("\n\n[构建失败] 全栈项目构建失败，请检查生成的代码")));
+            }
+        }
+        sink.complete();
+    }
+
+    /**
+     * 部分推理模型在工具循环完成后不输出最终文本，直接关闭最后一轮 SSE。
+     */
+    private boolean isTerminalEmptyStream(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("模型服务以空 SSE 流结束")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

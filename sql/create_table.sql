@@ -32,6 +32,7 @@ create table app
     cover        varchar(512)                       null comment '应用封面',
     initPrompt   text                               null comment '应用初始化的 prompt',
     codeGenType  varchar(64)                        null comment '代码生成类型（枚举）',
+    generationStrategy varchar(32) default 'DIRECT' not null comment '生成方式：DIRECT/MULTI_AGENT',
     deployKey    varchar(64)                        null comment '部署标识',
     deployedTime datetime                           null comment '部署时间',
     dockerDeployUrl varchar(512)                    null comment 'Docker 部署访问地址（仅 docker_compose 模式）',

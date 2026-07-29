@@ -162,6 +162,9 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
         interruptedRuns.addAll(this.list(QueryWrapper.create()
                 .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
                 .eq("status", GenerationRunStatusEnum.EXECUTING.name())));
+        interruptedRuns.addAll(this.list(QueryWrapper.create()
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.BUILDING.name())));
         for (GenerationRun run : interruptedRuns) {
             finishRun(run.getRunId(), GenerationRunStatusEnum.FAILED,
                     "服务重启导致协作规划中断，请重新生成协作规划");
@@ -186,7 +189,14 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
                 .eq("userId", userId)
                 .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
                 .eq("status", GenerationRunStatusEnum.EXECUTING.name());
-        return this.count(executingQuery) > 0;
+        if (this.count(executingQuery) > 0) {
+            return true;
+        }
+        return this.count(QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.BUILDING.name())) > 0;
     }
 
     @Override
@@ -281,6 +291,12 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
     }
 
     @Override
+    public void publishEvent(String runId, Long taskId, String eventType, Map<String, Object> payload) {
+        ThrowUtils.throwIf(eventType == null || eventType.isBlank(), ErrorCode.PARAMS_ERROR, "事件类型不能为空");
+        appendEvent(runId, taskId, AgentEventTypeEnum.valueOf(eventType), payload == null ? Map.of() : payload);
+    }
+
+    @Override
     public void finishRun(String runId, GenerationRunStatusEnum status, String errorMessage) {
         ThrowUtils.throwIf(runId == null || runId.isBlank(), ErrorCode.PARAMS_ERROR, "runId 不能为空");
         ThrowUtils.throwIf(status != GenerationRunStatusEnum.SUCCEEDED && status != GenerationRunStatusEnum.FAILED
@@ -335,6 +351,13 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
                 .orderBy("createTime", false)
                 .limit(1));
         return runs.isEmpty() ? null : runs.getFirst();
+    }
+
+    @Override
+    public boolean hasAnyRun(Long appId, Long userId) {
+        return this.count(QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)) > 0;
     }
 
     @Override

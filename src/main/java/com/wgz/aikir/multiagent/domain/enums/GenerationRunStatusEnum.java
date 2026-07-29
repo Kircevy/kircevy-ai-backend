@@ -4,6 +4,7 @@ public enum GenerationRunStatusEnum {
     PENDING,
     PLANNING,
     EXECUTING,
+    BUILDING,
     SUCCEEDED,
     FAILED,
     PARTIAL,

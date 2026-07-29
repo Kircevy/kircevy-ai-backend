@@ -19,9 +19,12 @@ import com.wgz.aikir.multiagent.domain.enums.AgentTaskStatusEnum;
 import com.wgz.aikir.multiagent.domain.enums.GenerationRunStatusEnum;
 import com.wgz.aikir.multiagent.domain.enums.PlanningArtifactTypeEnum;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
+import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.multiagent.service.PlanningAgentService;
 import com.wgz.aikir.multiagent.service.PlanningAgentWorker;
+import com.wgz.aikir.multiagent.config.MultiAgentProperties;
 import com.wgz.aikir.multiagent.validation.StructuredPlanningValidator;
+import com.wgz.aikir.multiagent.strategy.GenerationStrategyPolicy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -58,26 +61,42 @@ public class PlanningAgentServiceImpl implements PlanningAgentService {
     @Resource
     private PlanningAgentWorker planningAgentWorker;
 
+    @Resource
+    private MultiAgentProperties multiAgentProperties;
+
+    @Lazy
+    @Resource
+    private ExecutionAgentService executionAgentService;
+
+    @Resource
+    private GenerationStrategyPolicy generationStrategyPolicy;
+
     @Override
-    public GenerationRun createPlanningRun(App app, User user, String message) {
+    public GenerationRun createPlanningRun(App app, User user, String message, boolean autoExecute) {
         ThrowUtils.throwIf(app == null || app.getId() == null, ErrorCode.PARAMS_ERROR, "应用不能为空");
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR);
         ThrowUtils.throwIf(message == null || message.isBlank(), ErrorCode.PARAMS_ERROR, "规划需求不能为空");
         CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         ThrowUtils.throwIf(codeGenType != CodeGenTypeEnum.FULLSTACK, ErrorCode.PARAMS_ERROR,
                 "协作规划当前仅支持全栈工程模式");
+        generationStrategyPolicy.requireMultiAgentSelected(app);
+        ThrowUtils.throwIf(autoExecute && !multiAgentProperties.isExecutionEnabled(), ErrorCode.NO_AUTH_ERROR,
+                "当前未启用协作执行功能");
 
         GenerationRun run = generationRunService.startMultiAgentRun(app, user, codeGenType, message);
-        planningAgentWorker.execute(run, user, message);
+        planningAgentWorker.execute(run, user, message, autoExecute);
         return run;
     }
 
     @Override
-    public void executePlanningRun(GenerationRun run, User user, String message) {
+    public void executePlanningRun(GenerationRun run, User user, String message, boolean autoExecute) {
         try {
             AgentArtifact productSpec = generateProductSpec(run, message);
             generateArchitectureBundle(run, productSpec);
             generationRunService.finishRun(run.getRunId(), GenerationRunStatusEnum.SUCCEEDED, null);
+            if (autoExecute) {
+                executionAgentService.startExecutionRun(run.getRunId(), user);
+            }
         } catch (Exception exception) {
             String errorMessage = getSafeErrorMessage(exception);
             log.warn("M1 协作规划失败，runId：{}，原因：{}", run.getRunId(), errorMessage);

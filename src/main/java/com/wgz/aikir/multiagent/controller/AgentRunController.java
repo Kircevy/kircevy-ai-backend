@@ -7,8 +7,11 @@ import com.wgz.aikir.multiagent.domain.entity.AgentArtifact;
 import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
 import com.wgz.aikir.multiagent.model.request.MultiAgentPlanningRequest;
 import com.wgz.aikir.multiagent.service.PlanningAgentService;
+import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.model.entity.User;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
+import com.wgz.aikir.multiagent.streaming.AgentOutputStreamEvent;
+import com.wgz.aikir.multiagent.streaming.AgentOutputStreamHub;
 import com.wgz.aikir.service.UserService;
 import com.wgz.aikir.service.AppService;
 import com.wgz.aikir.model.entity.App;
@@ -45,10 +48,16 @@ public class AgentRunController {
     private PlanningAgentService planningAgentService;
 
     @Resource
+    private ExecutionAgentService executionAgentService;
+
+    @Resource
     private AppService appService;
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AgentOutputStreamHub agentOutputStreamHub;
 
     @GetMapping("/app/{appId}/latest")
     public BaseResponse<GenerationRun> getLatestRun(@PathVariable Long appId, HttpServletRequest request) {
@@ -76,6 +85,20 @@ public class AgentRunController {
         return ResultUtils.success(generationRunService.listArtifactsForOwner(runId, loginUser));
     }
 
+    /** 订阅前端与后端执行 Agent 的独立模型输出；重连时先返回当前完整快照。 */
+    @GetMapping(value = "/{runId}/output/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<AgentOutputStreamEvent>> streamAgentOutput(
+            @PathVariable String runId,
+            HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        generationRunService.getRunForOwner(runId, loginUser);
+        return agentOutputStreamHub.subscribe(runId)
+                .map(output -> ServerSentEvent.builder(output)
+                        .id(String.valueOf(output.sequence()))
+                        .event("agent-output")
+                        .build());
+    }
+
     /** 发起 M1 协作规划，仅生成规划产物，不会生成或覆盖应用代码。 */
     @PostMapping("/app/{appId}/plan")
     public BaseResponse<GenerationRun> createPlanningRun(@PathVariable Long appId,
@@ -86,7 +109,15 @@ public class AgentRunController {
         App app = appService.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()), ErrorCode.NO_AUTH_ERROR, "无权规划该应用");
-        return ResultUtils.success(planningAgentService.createPlanningRun(app, loginUser, planningRequest.getMessage()));
+        return ResultUtils.success(planningAgentService.createPlanningRun(app, loginUser, planningRequest.getMessage(),
+                planningRequest.isAutoExecute()));
+    }
+
+    /** 基于已冻结的 M1 规划产物发起 M2 并行执行。 */
+    @PostMapping("/{runId}/execute")
+    public BaseResponse<GenerationRun> executePlanningRun(@PathVariable String runId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(executionAgentService.startExecutionRun(runId, loginUser));
     }
 
     /**

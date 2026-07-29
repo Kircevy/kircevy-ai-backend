@@ -13,4 +13,6 @@ public class MultiAgentSettingsVO {
     private boolean fullstackOnly;
 
     private boolean planningEnabled;
+
+    private boolean executionEnabled;
 }

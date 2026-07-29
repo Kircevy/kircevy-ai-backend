@@ -224,6 +224,20 @@ public class OpenAiStreamingResponseBuilder {
                     .build();
         }
 
+        /*
+         * Some OpenAI-compatible reasoning models end the final tool-loop turn with
+         * an empty assistant delta after all files have been written. The stream did
+         * start (id/model/finish reason exists), so represent it as an empty terminal
+         * assistant response instead of leaking a null response into LangChain4j.
+         * A stream that never produced any OpenAI chunk still returns null and is
+         * handled by the caller as a real transport/protocol failure.
+         */
+        if (!isNullOrBlank(id.get()) || !isNullOrBlank(model.get()) || finishReason.get() != null) {
+            return ChatResponse.builder()
+                    .aiMessage(AiMessage.from(""))
+                    .metadata(chatResponseMetadata)
+                    .build();
+        }
         return null;
     }
 

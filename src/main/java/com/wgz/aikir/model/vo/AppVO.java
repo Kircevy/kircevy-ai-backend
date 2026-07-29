@@ -37,6 +37,11 @@ public class AppVO implements Serializable {
     private String codeGenType;
 
     /**
+     * 生成方式：DIRECT 或 MULTI_AGENT
+     */
+    private String generationStrategy;
+
+    /**
      * 部署标识
      */
     private String deployKey;
@@ -72,4 +77,4 @@ public class AppVO implements Serializable {
     private UserVO user;
 
     private static final long serialVersionUID = 1L;
-} 
+}
