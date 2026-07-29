@@ -189,7 +189,14 @@ public class GenerationRunServiceImpl extends ServiceImpl<GenerationRunMapper, G
                 .eq("userId", userId)
                 .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
                 .eq("status", GenerationRunStatusEnum.EXECUTING.name());
-        return this.count(executingQuery) > 0;
+        if (this.count(executingQuery) > 0) {
+            return true;
+        }
+        return this.count(QueryWrapper.create()
+                .eq("appId", appId)
+                .eq("userId", userId)
+                .eq("strategy", GenerationStrategyEnum.MULTI_AGENT.name())
+                .eq("status", GenerationRunStatusEnum.BUILDING.name())) > 0;
     }
 
     @Override
