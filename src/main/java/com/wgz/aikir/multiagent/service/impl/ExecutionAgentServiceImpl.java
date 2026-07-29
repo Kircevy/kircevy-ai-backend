@@ -16,6 +16,7 @@ import com.wgz.aikir.multiagent.domain.entity.GenerationRun;
 import com.wgz.aikir.multiagent.domain.enums.AgentTaskStatusEnum;
 import com.wgz.aikir.multiagent.domain.enums.GenerationRunStatusEnum;
 import com.wgz.aikir.multiagent.execution.ApiContractVerifier;
+import com.wgz.aikir.multiagent.execution.FileManifestRetryExecutor;
 import com.wgz.aikir.multiagent.execution.WorkspaceBuildService;
 import com.wgz.aikir.multiagent.execution.WorkspaceFileService;
 import com.wgz.aikir.multiagent.streaming.AgentStreamingResponseCollector;
@@ -24,6 +25,7 @@ import com.wgz.aikir.multiagent.mapper.AgentArtifactMapper;
 import com.wgz.aikir.multiagent.service.ExecutionAgentService;
 import com.wgz.aikir.multiagent.service.ExecutionAgentWorker;
 import com.wgz.aikir.multiagent.service.GenerationRunService;
+import dev.langchain4j.service.TokenStream;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -71,6 +73,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
 
     @Resource
     private WorkspaceFileService workspaceFileService;
+
+    @Resource
+    private FileManifestRetryExecutor fileManifestRetryExecutor;
 
     @Resource
     private WorkspaceBuildService workspaceBuildService;
@@ -198,39 +203,49 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
     }
 
     private List<String> generateFrontendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
-        String manifest = streamingResponseCollector.collect(run.getRunId(), FRONTEND_MANIFEST_STREAM_KEY,
-                planningAiServiceFactory.createFrontendManifestAgent().generateFrontendFileManifest(inputs.toPrompt()));
-        saveRawResponse(run, FRONTEND_TASK_KEY, "manifest", manifest);
-        List<String> files = workspaceFileService.parseFileManifest(manifest);
+        List<String> files = fileManifestRetryExecutor.generate((prompt, attempt) -> collectAndSaveRawResponse(
+                run, FRONTEND_MANIFEST_STREAM_KEY, FRONTEND_TASK_KEY, "manifest-" + attempt,
+                planningAiServiceFactory.createFrontendManifestAgent().generateFrontendFileManifest(prompt)),
+                workspaceFileService::parseFileManifest, inputs.toPrompt());
         String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
         for (int index = 0; index < files.size(); index++) {
             String path = files.get(index);
             agentOutputStreamHub.append(run.getRunId(), FRONTEND_TASK_KEY, "\n\n// " + path + "\n");
-            String source = streamingResponseCollector.collect(run.getRunId(), FRONTEND_TASK_KEY,
+            String source = collectAndSaveRawResponse(run, FRONTEND_TASK_KEY, FRONTEND_TASK_KEY, "file-" + index,
                     planningAiServiceFactory.createFrontendExecutionAgent().generateFrontendSourceFile(
                             projectContext + "\n\ntarget-file: " + path));
-            saveRawResponse(run, FRONTEND_TASK_KEY, "file-" + index, source);
             workspaceFileService.writeFile(workspace, path, source);
         }
         return files;
     }
 
     private List<String> generateBackendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
-        String manifest = streamingResponseCollector.collect(run.getRunId(), BACKEND_MANIFEST_STREAM_KEY,
-                planningAiServiceFactory.createBackendManifestAgent().generateBackendFileManifest(inputs.toPrompt()));
-        saveRawResponse(run, BACKEND_TASK_KEY, "manifest", manifest);
-        List<String> files = workspaceFileService.parseFileManifest(manifest);
+        List<String> files = fileManifestRetryExecutor.generate((prompt, attempt) -> collectAndSaveRawResponse(
+                run, BACKEND_MANIFEST_STREAM_KEY, BACKEND_TASK_KEY, "manifest-" + attempt,
+                planningAiServiceFactory.createBackendManifestAgent().generateBackendFileManifest(prompt)),
+                workspaceFileService::parseFileManifest, inputs.toPrompt());
         String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
         for (int index = 0; index < files.size(); index++) {
             String path = files.get(index);
             agentOutputStreamHub.append(run.getRunId(), BACKEND_TASK_KEY, "\n\n// " + path + "\n");
-            String source = streamingResponseCollector.collect(run.getRunId(), BACKEND_TASK_KEY,
+            String source = collectAndSaveRawResponse(run, BACKEND_TASK_KEY, BACKEND_TASK_KEY, "file-" + index,
                     planningAiServiceFactory.createBackendExecutionAgent().generateBackendSourceFile(
                             projectContext + "\n\ntarget-file: " + path));
-            saveRawResponse(run, BACKEND_TASK_KEY, "file-" + index, source);
             workspaceFileService.writeFile(workspace, path, source);
         }
         return files;
+    }
+
+    private String collectAndSaveRawResponse(GenerationRun run, String streamKey, String taskKey, String stage,
+                                              TokenStream tokenStream) throws IOException {
+        try {
+            String content = streamingResponseCollector.collect(run.getRunId(), streamKey, tokenStream);
+            saveRawResponse(run, taskKey, stage, content);
+            return content;
+        } catch (AgentStreamingResponseCollector.StreamingGenerationException exception) {
+            saveRawResponse(run, taskKey, stage, exception.partialResponse());
+            throw exception;
+        }
     }
 
     private void saveRawResponse(GenerationRun run, String taskKey, String stage, String content) throws IOException {

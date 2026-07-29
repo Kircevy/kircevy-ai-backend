@@ -2,6 +2,7 @@ package com.wgz.aikir.multiagent.streaming;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import reactor.core.Disposable;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -48,22 +49,36 @@ public class AgentOutputStreamHub {
     }
 
     public Flux<AgentOutputStreamEvent> subscribe(String runId) {
-        return Flux.defer(() -> {
+        return Flux.create(emitter -> {
             RunOutputState state = state(runId);
-            long snapshotSequence;
-            List<AgentOutputStreamEvent> snapshots;
+            Disposable[] subscription = new Disposable[1];
+            emitter.onDispose(() -> {
+                if (subscription[0] != null) {
+                    subscription[0].dispose();
+                }
+            });
             synchronized (state) {
-                snapshotSequence = state.sequence.get();
-                snapshots = state.outputs.entrySet().stream()
+                long snapshotSequence = state.sequence.get();
+                List<AgentOutputStreamEvent> snapshots = state.outputs.entrySet().stream()
                         .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                         .map(entry -> new AgentOutputStreamEvent(snapshotSequence, runId, entry.getKey(),
                                 "SNAPSHOT", entry.getValue().toString()))
                         .toList();
+                List<AgentOutputStreamEvent> pendingEvents = new java.util.ArrayList<>();
+                boolean[] snapshotDelivered = {false};
+                subscription[0] = state.sink.asFlux()
+                        .filter(event -> event.sequence() > snapshotSequence)
+                        .subscribe(event -> {
+                            if (snapshotDelivered[0]) {
+                                emitter.next(event);
+                            } else {
+                                pendingEvents.add(event);
+                            }
+                        }, emitter::error);
+                snapshots.forEach(emitter::next);
+                snapshotDelivered[0] = true;
+                pendingEvents.forEach(emitter::next);
             }
-            return Flux.concat(
-                    Flux.fromIterable(snapshots),
-                    state.sink.asFlux().filter(event -> event.sequence() > snapshotSequence)
-            );
         });
     }
 

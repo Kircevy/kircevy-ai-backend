@@ -70,4 +70,24 @@ class AgentOutputStreamHubTest {
         assertEquals("SNAPSHOT", snapshot.eventType());
         assertEquals("complete-source", snapshot.content());
     }
+
+    @Test
+    void deliversEveryEventProducedWhileDeliveringTheSnapshot() {
+        AgentOutputStreamHub hub = new AgentOutputStreamHub();
+        hub.append("run-4", "frontend_generation", "initial");
+
+        List<AgentOutputStreamEvent> events = hub.subscribe("run-4")
+                .doOnNext(event -> {
+                    if ("SNAPSHOT".equals(event.eventType())) {
+                        for (int index = 0; index < 65; index++) {
+                            hub.append("run-4", "frontend_generation", "delta-" + index);
+                        }
+                    }
+                })
+                .take(65)
+                .collectList()
+                .block(Duration.ofSeconds(1));
+
+        assertEquals("delta-0", events.get(1).content());
+    }
 }

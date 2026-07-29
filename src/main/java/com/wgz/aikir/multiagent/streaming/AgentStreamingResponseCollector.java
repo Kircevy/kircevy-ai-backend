@@ -1,7 +1,5 @@
 package com.wgz.aikir.multiagent.streaming;
 
-import com.wgz.aikir.exception.BusinessException;
-import com.wgz.aikir.exception.ErrorCode;
 import dev.langchain4j.service.TokenStream;
 import org.springframework.stereotype.Component;
 
@@ -42,8 +40,22 @@ public class AgentStreamingResponseCollector {
         } catch (CompletionException exception) {
             Throwable cause = exception.getCause() == null ? exception : exception.getCause();
             String message = cause.getMessage();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR,
-                    message == null || message.isBlank() ? "执行 Agent 流式生成失败" : message);
+            throw new StreamingGenerationException(
+                    message == null || message.isBlank() ? "执行 Agent 流式生成失败" : message,
+                    response.toString(), cause);
+        }
+    }
+
+    public static class StreamingGenerationException extends RuntimeException {
+        private final String partialResponse;
+
+        public StreamingGenerationException(String message, String partialResponse, Throwable cause) {
+            super(message, cause);
+            this.partialResponse = partialResponse;
+        }
+
+        public String partialResponse() {
+            return partialResponse;
         }
     }
 }

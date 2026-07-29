@@ -18,25 +18,33 @@ import java.util.regex.Pattern;
 public class ApiContractVerifier {
 
     private static final Pattern MAPPING_PATTERN = Pattern.compile(
-            "@(?:RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\\s*"
-                    + "\\(\\s*(?:value\\s*=\\s*)?\\\"([^\\\"]*)\\\"");
+            "@(RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\\s*"
+                    + "(?:\\(([^)]*)\\))?");
+    private static final Pattern MAPPING_PATH_PATTERN = Pattern.compile(
+            "(?:value|path)\\s*=\\s*\\\"([^\\\"]*)\\\"|^\\s*\\\"([^\\\"]*)\\\"");
+    private static final Pattern REQUEST_METHOD_PATTERN = Pattern.compile("RequestMethod\\.([A-Z]+)");
+    private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
 
     public VerificationResult verify(String apiContractYaml, Path frontendRoot, Path backendRoot) {
         Object loaded = new Yaml().load(apiContractYaml);
         if (!(loaded instanceof Map<?, ?> root) || !(root.get("paths") instanceof Map<?, ?> paths) || paths.isEmpty()) {
             return VerificationResult.failed("API 契约缺少 paths");
         }
-        String frontend = readSources(frontendRoot);
-        String backend = readSources(backendRoot);
+        String frontend = stripComments(readSources(frontendRoot));
+        String backend = stripComments(readSources(backendRoot));
         String contextPath = readContextPath(backendRoot);
-        Set<String> backendMappings = extractMappings(backend);
-        for (Object rawPath : paths.keySet()) {
-            String path = String.valueOf(rawPath);
+        Set<RouteMapping> backendMappings = extractMappings(backend);
+        List<ContractOperation> contractOperations = extractContractOperations(paths);
+        if (contractOperations.isEmpty()) {
+            return VerificationResult.failed("API 契约未定义受支持的 HTTP 操作");
+        }
+        for (ContractOperation operation : contractOperations) {
+            String path = operation.path();
             if (hasDuplicatedContextPrefix(path, contextPath, backendMappings)) {
                 return VerificationResult.failed("后端接口前缀重复：" + path);
             }
-            if (!containsBackendMapping(path, contextPath, backendMappings)) {
-                return VerificationResult.failed("后端未实现契约路径：" + path);
+            if (!containsBackendMapping(operation, contextPath, backendMappings)) {
+                return VerificationResult.failed("后端未以 " + operation.method() + " 实现契约路径：" + path);
             }
             if (!frontend.contains(path)) {
                 return VerificationResult.failed("前端未使用契约路径：" + path);
@@ -50,27 +58,78 @@ public class ApiContractVerifier {
         return VerificationResult.succeeded("API 路径已在前后端产物中匹配");
     }
 
-    private boolean hasDuplicatedContextPrefix(String contractPath, String contextPath, Set<String> mappings) {
+    private boolean hasDuplicatedContextPrefix(String contractPath, String contextPath, Set<RouteMapping> mappings) {
         return !contextPath.isEmpty()
                 && (contractPath.equals(contextPath) || contractPath.startsWith(contextPath + "/"))
-                && mappings.contains(contextPath);
+                && mappings.stream().map(RouteMapping::path).anyMatch(contextPath::equals);
     }
 
-    private boolean containsBackendMapping(String contractPath, String contextPath, Set<String> mappings) {
+    private boolean containsBackendMapping(ContractOperation operation, String contextPath, Set<RouteMapping> mappings) {
+        String contractPath = operation.path();
+        String expectedPath;
         if (contextPath.isEmpty() || !contractPath.startsWith(contextPath)) {
-            return mappings.contains(contractPath);
+            expectedPath = normalizePath(contractPath);
+        } else {
+            String relativePath = contractPath.substring(contextPath.length());
+            expectedPath = normalizePath(relativePath);
         }
-        String relativePath = contractPath.substring(contextPath.length());
-        return mappings.contains(relativePath.isEmpty() ? "/" : relativePath);
+        return mappings.stream().anyMatch(mapping -> mapping.path().equals(expectedPath)
+                && mapping.accepts(operation.method()));
     }
 
-    private Set<String> extractMappings(String backend) {
-        Set<String> mappings = new LinkedHashSet<>();
+    private Set<RouteMapping> extractMappings(String backend) {
+        Set<RouteMapping> mappings = new LinkedHashSet<>();
         Matcher matcher = MAPPING_PATTERN.matcher(backend);
         while (matcher.find()) {
-            mappings.add(normalizePath(matcher.group(1)));
+            String annotation = matcher.group(1);
+            String arguments = matcher.group(2);
+            mappings.add(new RouteMapping(extractMappingPath(arguments), extractMappingMethods(annotation, arguments)));
         }
         return mappings;
+    }
+
+    private String extractMappingPath(String arguments) {
+        if (arguments == null) {
+            return "";
+        }
+        Matcher matcher = MAPPING_PATH_PATTERN.matcher(arguments);
+        if (!matcher.find()) {
+            return "";
+        }
+        String value = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+        return normalizePath(value);
+    }
+
+    private Set<String> extractMappingMethods(String annotation, String arguments) {
+        if (!"RequestMapping".equals(annotation)) {
+            return Set.of(annotation.replace("Mapping", "").toUpperCase());
+        }
+        if (arguments == null) {
+            return Set.of();
+        }
+        Set<String> methods = new LinkedHashSet<>();
+        Matcher matcher = REQUEST_METHOD_PATTERN.matcher(arguments);
+        while (matcher.find()) {
+            methods.add(matcher.group(1));
+        }
+        return methods;
+    }
+
+    private List<ContractOperation> extractContractOperations(Map<?, ?> paths) {
+        List<ContractOperation> operations = new java.util.ArrayList<>();
+        for (Map.Entry<?, ?> pathEntry : paths.entrySet()) {
+            String path = String.valueOf(pathEntry.getKey());
+            if (!(pathEntry.getValue() instanceof Map<?, ?> operationMap)) {
+                continue;
+            }
+            for (Object rawMethod : operationMap.keySet()) {
+                String method = String.valueOf(rawMethod).toUpperCase();
+                if (HTTP_METHODS.contains(method)) {
+                    operations.add(new ContractOperation(path, method));
+                }
+            }
+        }
+        return operations;
     }
 
     private String readContextPath(Path backendRoot) {
@@ -114,6 +173,53 @@ public class ApiContractVerifier {
         }
     }
 
+    private String stripComments(String source) {
+        StringBuilder result = new StringBuilder(source.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < source.length(); index++) {
+            char current = source.charAt(index);
+            char next = index + 1 < source.length() ? source.charAt(index + 1) : 0;
+            if (quote != 0) {
+                result.append(current);
+                if (escaped) {
+                    escaped = false;
+                } else if (current == '\\') {
+                    escaped = true;
+                } else if (current == quote) {
+                    quote = 0;
+                }
+                continue;
+            }
+            if (current == '\"' || current == '\'' || current == '`') {
+                quote = current;
+                result.append(current);
+                continue;
+            }
+            if (current == '/' && next == '/') {
+                index++;
+                while (index + 1 < source.length() && source.charAt(index + 1) != '\n') {
+                    index++;
+                }
+                continue;
+            }
+            if (current == '/' && next == '*') {
+                index++;
+                while (index + 1 < source.length()
+                        && !(source.charAt(index) == '*' && source.charAt(index + 1) == '/')) {
+                    if (source.charAt(index) == '\n') {
+                        result.append('\n');
+                    }
+                    index++;
+                }
+                index++;
+                continue;
+            }
+            result.append(current);
+        }
+        return result.toString();
+    }
+
     private String readQuietly(Path path) {
         try {
             return Files.readString(path);
@@ -141,6 +247,15 @@ public class ApiContractVerifier {
             map.values().forEach(value -> collectSchemaProperties(value, properties));
         } else if (node instanceof List<?> list) {
             list.forEach(value -> collectSchemaProperties(value, properties));
+        }
+    }
+
+    private record ContractOperation(String path, String method) {
+    }
+
+    private record RouteMapping(String path, Set<String> methods) {
+        private boolean accepts(String method) {
+            return methods.isEmpty() || methods.contains(method);
         }
     }
 

@@ -18,6 +18,12 @@ class ApiContractVerifierTest {
                 get: {}
             """;
 
+    private static final String POST_CONTRACT = """
+            paths:
+              /api/brand-content:
+                post: {}
+            """;
+
     @TempDir
     Path tempDir;
 
@@ -44,11 +50,54 @@ class ApiContractVerifierTest {
         assertTrue(result.summary().contains("重复"), result.summary());
     }
 
+    @Test
+    void rejectsAControllerThatUsesTheWrongHttpMethod() throws IOException {
+        Path frontendRoot = writeFrontend("fetch('/api/brand-content', { method: 'POST' });");
+        Path backendRoot = writeBackend("@GetMapping(\"/brand-content\")");
+
+        ApiContractVerifier.VerificationResult result = new ApiContractVerifier()
+                .verify(POST_CONTRACT, frontendRoot, backendRoot);
+
+        assertFalse(result.success());
+        assertTrue(result.summary().contains("POST"), result.summary());
+    }
+
+    @Test
+    void rejectsRoutesThatExistOnlyInComments() throws IOException {
+        Path frontendRoot = writeFrontend("// fetch('/api/brand-content');");
+        Path backendRoot = writeBackend("// @GetMapping(\"/brand-content\")");
+
+        ApiContractVerifier.VerificationResult result = new ApiContractVerifier()
+                .verify(CONTRACT, frontendRoot, backendRoot);
+
+        assertFalse(result.success());
+    }
+
+    @Test
+    void rejectsPathsWithoutASupportedHttpOperation() throws IOException {
+        Path frontendRoot = writeFrontend();
+        Path backendRoot = writeBackend("@GetMapping(\"/brand-content\")");
+        String contract = """
+                paths:
+                  /api/brand-content:
+                    parameters: []
+                """;
+
+        ApiContractVerifier.VerificationResult result = new ApiContractVerifier()
+                .verify(contract, frontendRoot, backendRoot);
+
+        assertFalse(result.success());
+    }
+
     private Path writeFrontend() throws IOException {
+        return writeFrontend("fetch('/api/brand-content');");
+    }
+
+    private Path writeFrontend(String source) throws IOException {
         Path frontend = tempDir.resolve("frontend");
         Path api = frontend.resolve("src/api.ts");
         Files.createDirectories(api.getParent());
-        Files.writeString(api, "fetch('/api/brand-content');");
+        Files.writeString(api, source);
         return frontend;
     }
 
