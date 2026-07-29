@@ -6,6 +6,7 @@ import com.wgz.aikir.ai.AiCodeGeneratorServiceFactory;
 import com.wgz.aikir.ai.model.HtmlCodeResult;
 import com.wgz.aikir.ai.model.MultiFileCodeResult;
 import com.wgz.aikir.ai.model.message.AiResponseMessage;
+import com.wgz.aikir.ai.streaming.ThinkingDisplayAdapter;
 import com.wgz.aikir.ai.streaming.ToolCallDisplayAdapter;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
@@ -174,6 +175,7 @@ public class AiCodeGeneratorFacade {
    private Flux<String> processTokenStream(TokenStream tokenStream, Long appId, CodeGenTypeEnum codeGenTypeEnum){
         return Flux.create(sink -> {
             ToolCallDisplayAdapter toolCallDisplayAdapter = new ToolCallDisplayAdapter(sink::next);
+            ThinkingDisplayAdapter thinkingDisplayAdapter = new ThinkingDisplayAdapter(sink::next);
             AtomicBoolean hasExecutedTool = new AtomicBoolean(false);
             AtomicBoolean terminalHandled = new AtomicBoolean(false);
             Runnable completeGeneration = () -> {
@@ -185,7 +187,7 @@ public class AiCodeGeneratorFacade {
             tokenStream.onPartialResponse((String partialResponse) -> {
                 AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                 sink.next(JSONUtil.toJsonStr(aiResponseMessage));
-            }).beforeToolExecution(beforeToolExecution -> {
+            }).onPartialThinking(partialThinking -> thinkingDisplayAdapter.onPartialThinking(partialThinking.text())).beforeToolExecution(beforeToolExecution -> {
                 toolCallDisplayAdapter.beforeToolExecution(beforeToolExecution.request());
             }).onToolExecuted(toolExecution -> {
                 hasExecutedTool.set(true);

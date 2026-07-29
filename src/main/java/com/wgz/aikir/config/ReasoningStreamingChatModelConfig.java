@@ -30,6 +30,8 @@ public class ReasoningStreamingChatModelConfig {
 
     private Integer maxTokens;
 
+    private Double temperature;
+
     private Duration timeout;
 
     private Boolean logRequests = false;
@@ -54,6 +56,7 @@ public class ReasoningStreamingChatModelConfig {
                 .baseUrl(baseUrl)
                 .modelName(modelName)
                 .maxTokens(maxTokens)
+                .temperature(temperature)
                 .reasoningEffort(reasoningEffort)
                 .returnThinking(returnThinking)
                 .sendThinking(sendThinking)

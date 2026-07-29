@@ -97,6 +97,10 @@ public class JsonMessageStreamHandler {
                 chatHistoryStringBuilder.append(data);
                 return data;
             }
+            case THINKING -> {
+                // 思考内容仅透传给当前前端，不写入后续对话历史。
+                return chunk;
+            }
             case TOOL_REQUEST -> {
                 ToolRequestMessage toolRequestMessage = JSONUtil.toBean(chunk, ToolRequestMessage.class);
                 String toolId = toolRequestMessage.getId();
