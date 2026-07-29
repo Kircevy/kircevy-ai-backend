@@ -36,6 +36,18 @@ public class MultiAgentAsyncConfig {
         return executor;
     }
 
+    /** M2 协调任务与前后端子任务必须使用不同线程池，避免父任务等待子任务时耗尽工作线程。 */
+    @Bean("multiAgentCoordinatorExecutor")
+    public Executor multiAgentCoordinatorExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(10);
+        executor.setThreadNamePrefix("multi-agent-coordinator-");
+        executor.initialize();
+        return executor;
+    }
+
     /** 为 SSE 等 MVC 异步响应提供受控线程池，避免使用默认的临时线程执行器。 */
     @Bean("mvcStreamingTaskExecutor")
     public AsyncTaskExecutor mvcStreamingTaskExecutor() {

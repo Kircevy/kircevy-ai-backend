@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.File;
+import java.nio.file.Path;
 
 /**
  * 静态资源访问
@@ -47,9 +48,17 @@ public class StaticResourceController {
             if (resourcePath.equals("/")) {
                 resourcePath = "/index.html";
             }
+            if (deployKey.startsWith("multiagent_") && !resourcePath.startsWith("/preview/")) {
+                return ResponseEntity.notFound().build();
+            }
             // 构建文件路径
-            String filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
-            File file = new File(filePath);
+            Path deployRoot = Path.of(PREVIEW_ROOT_DIR, deployKey).toAbsolutePath().normalize();
+            Path resolvedPath = deployRoot.resolve(resourcePath.substring(1)).normalize();
+            if (!resolvedPath.startsWith(deployRoot)) {
+                return ResponseEntity.notFound().build();
+            }
+            String filePath = resolvedPath.toString();
+            File file = resolvedPath.toFile();
             // 检查文件是否存在
             if (!file.exists()) {
                 return ResponseEntity.notFound().build();

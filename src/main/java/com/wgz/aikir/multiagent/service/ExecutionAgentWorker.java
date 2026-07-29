@@ -11,7 +11,7 @@ public class ExecutionAgentWorker {
     @Resource
     private ExecutionAgentService executionAgentService;
 
-    @Async("multiAgentExecutionExecutor")
+    @Async("multiAgentCoordinatorExecutor")
     public void execute(String runId) {
         executionAgentService.executeRun(runId);
     }
