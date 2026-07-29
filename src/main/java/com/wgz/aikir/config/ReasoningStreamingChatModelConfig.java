@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Scope;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 @ConfigurationProperties(prefix = "langchain4j.open-ai.reasoning-streaming-chat-model")
@@ -29,13 +30,21 @@ public class ReasoningStreamingChatModelConfig {
 
     private Integer maxTokens;
 
-    private Double temperature;
-
     private Duration timeout;
 
     private Boolean logRequests = false;
 
     private Boolean logResponses = false;
+
+    private String reasoningEffort;
+
+    private Boolean returnThinking = true;
+
+    private Boolean sendThinking = true;
+
+    private Boolean accumulateToolCallId = false;
+
+    private Map<String, Object> customParameters;
 
     @Bean
     @Scope("prototype")
@@ -45,9 +54,13 @@ public class ReasoningStreamingChatModelConfig {
                 .baseUrl(baseUrl)
                 .modelName(modelName)
                 .maxTokens(maxTokens)
-                .temperature(temperature)
+                .reasoningEffort(reasoningEffort)
+                .returnThinking(returnThinking)
+                .sendThinking(sendThinking)
+                .accumulateToolCallId(accumulateToolCallId)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
+                .customParameters(customParameters)
                 .listeners(List.of(aiModelMonitorListener));
         if (timeout != null) {
             builder.timeout(timeout);

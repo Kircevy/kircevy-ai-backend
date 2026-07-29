@@ -4,7 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.4-brightgreen)
-![LangChain4j](https://img.shields.io/badge/LangChain4j-1.1.0-blue)
+![LangChain4j](https://img.shields.io/badge/LangChain4j-1.18.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 **🚀 下一代企业级智能代码生成引擎**
@@ -65,7 +65,7 @@ Kircevy AI 是一个基于 LangChain4j 框架构建的企业级智能代码生�
 
 ### 后端技术
 - **框架**: Spring Boot 3.5.4, Spring AOP
-- **AI框架**: LangChain4j 1.1.0, LangGraph4j 1.6.0
+- **AI框架**: LangChain4j 1.18.0, LangGraph4j 1.6.0
 - **数据库**: MySQL 8.0, MyBatis-Flex
 - **缓存**: Redis 6.0, Caffeine
 - **监控**: Prometheus, Micrometer
@@ -179,7 +179,7 @@ langchain4j:
     chat-model:
       base-url: https://api.deepseek.com
       api-key: ${DEEPSEEK_API_KEY}
-      model-name: deepseek-chat
+      model-name: deepseek-v4-flash
       max-tokens: 8192
 
 # 对象存储配置

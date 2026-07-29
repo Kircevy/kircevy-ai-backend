@@ -18,7 +18,7 @@ public class AgentScopeDemoConfig {
     @Value("${langchain4j.open-ai.chat-model.api-key:}")
     private String apiKey;
 
-    @Value("${langchain4j.open-ai.chat-model.model-name:deepseek-chat}")
+    @Value("${langchain4j.open-ai.chat-model.model-name:deepseek-v4-flash}")
     private String modelName;
 
     @Bean

@@ -6,8 +6,7 @@ import com.wgz.aikir.ai.AiCodeGeneratorServiceFactory;
 import com.wgz.aikir.ai.model.HtmlCodeResult;
 import com.wgz.aikir.ai.model.MultiFileCodeResult;
 import com.wgz.aikir.ai.model.message.AiResponseMessage;
-import com.wgz.aikir.ai.model.message.ToolExecutedMessage;
-import com.wgz.aikir.ai.model.message.ToolRequestMessage;
+import com.wgz.aikir.ai.streaming.ToolCallDisplayAdapter;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
 import com.wgz.aikir.core.builder.FullStackProjectBuilder;
@@ -19,7 +18,6 @@ import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.service.FrontendPreviewBuildService;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.TokenStream;
-import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -175,6 +173,7 @@ public class AiCodeGeneratorFacade {
      */
    private Flux<String> processTokenStream(TokenStream tokenStream, Long appId, CodeGenTypeEnum codeGenTypeEnum){
         return Flux.create(sink -> {
+            ToolCallDisplayAdapter toolCallDisplayAdapter = new ToolCallDisplayAdapter(sink::next);
             AtomicBoolean hasExecutedTool = new AtomicBoolean(false);
             AtomicBoolean terminalHandled = new AtomicBoolean(false);
             Runnable completeGeneration = () -> {
@@ -186,13 +185,11 @@ public class AiCodeGeneratorFacade {
             tokenStream.onPartialResponse((String partialResponse) -> {
                 AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                 sink.next(JSONUtil.toJsonStr(aiResponseMessage));
-            }).onPartialToolExecutionRequest((index, toolExecutionRequest) -> {
-                ToolRequestMessage toolRequestMessage = new ToolRequestMessage(toolExecutionRequest);
-                sink.next(JSONUtil.toJsonStr(toolRequestMessage));
-            }).onToolExecuted((ToolExecution toolExecution) -> {
+            }).beforeToolExecution(beforeToolExecution -> {
+                toolCallDisplayAdapter.beforeToolExecution(beforeToolExecution.request());
+            }).onToolExecuted(toolExecution -> {
                 hasExecutedTool.set(true);
-                ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
-                sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                toolCallDisplayAdapter.onToolExecuted(toolExecution);
             }).onCompleteResponse((ChatResponse response) -> {
                 completeGeneration.run();
             }).onError((Throwable error) -> {
