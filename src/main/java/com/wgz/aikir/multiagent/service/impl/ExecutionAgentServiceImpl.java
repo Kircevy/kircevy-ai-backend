@@ -17,6 +17,9 @@ import com.wgz.aikir.multiagent.domain.enums.AgentTaskStatusEnum;
 import com.wgz.aikir.multiagent.domain.enums.GenerationRunStatusEnum;
 import com.wgz.aikir.multiagent.execution.ApiContractVerifier;
 import com.wgz.aikir.multiagent.execution.FileManifestRetryExecutor;
+import com.wgz.aikir.multiagent.execution.ProjectGenerationRetryExecutor;
+import com.wgz.aikir.multiagent.execution.ProjectIntegrityVerifier;
+import com.wgz.aikir.multiagent.execution.TaskFailureSummary;
 import com.wgz.aikir.multiagent.execution.WorkspaceBuildService;
 import com.wgz.aikir.multiagent.execution.WorkspaceFileService;
 import com.wgz.aikir.multiagent.streaming.AgentStreamingResponseCollector;
@@ -76,6 +79,15 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
 
     @Resource
     private FileManifestRetryExecutor fileManifestRetryExecutor;
+
+    @Resource
+    private ProjectGenerationRetryExecutor projectGenerationRetryExecutor;
+
+    @Resource
+    private ProjectIntegrityVerifier projectIntegrityVerifier;
+
+    @Resource
+    private TaskFailureSummary taskFailureSummary;
 
     @Resource
     private WorkspaceBuildService workspaceBuildService;
@@ -159,11 +171,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            List<String> files = generateFrontendFiles(run, inputs, frontendRoot);
-            WorkspaceBuildService.BuildResult build = workspaceBuildService.buildFrontend(frontendRoot);
-            if (!build.success()) {
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "前端构建失败：" + compact(build.summary()));
-            }
+            GeneratedWorkspace generated = generateFrontendWorkspace(run, inputs);
+            replaceWorkspace(frontendRoot, generated.root());
+            List<String> files = generated.files();
             Path previewRoot = runRoot(run.getRunId()).resolve("preview");
             copyDirectory(frontendRoot.resolve("dist"), previewRoot);
             AgentArtifact artifact = saveArtifact(run, task, "FRONTEND_WORKSPACE", "artifacts/frontend-workspace.json",
@@ -186,11 +196,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
                 "[\"PRODUCT_SPEC\",\"ARCHITECTURE\",\"API_CONTRACT\",\"TASK_MANIFEST\"]");
         generationRunService.startTask(task);
         try {
-            List<String> files = generateBackendFiles(run, inputs, backendRoot);
-            WorkspaceBuildService.BuildResult build = workspaceBuildService.compileBackend(backendRoot);
-            if (!build.success()) {
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "后端编译失败：" + compact(build.summary()));
-            }
+            GeneratedWorkspace generated = generateBackendWorkspace(run, inputs);
+            replaceWorkspace(backendRoot, generated.root());
+            List<String> files = generated.files();
             AgentArtifact artifact = saveArtifact(run, task, "BACKEND_WORKSPACE", "artifacts/backend-workspace.json",
                     "后端工作区文件 " + files.size() + " 个", Map.of("files", files));
             generationRunService.finishTask(task, AgentTaskStatusEnum.SUCCEEDED,
@@ -202,16 +210,50 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
         }
     }
 
-    private List<String> generateFrontendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
+    private GeneratedWorkspace generateFrontendWorkspace(GenerationRun run, PlanningInputs inputs) throws IOException {
+        return projectGenerationRetryExecutor.execute((attempt, previousFailure) -> {
+            Path workspace = prepareAttemptWorkspace(run, FRONTEND_TASK_KEY, attempt);
+            List<String> files = generateFrontendFiles(run, executionContext(inputs, previousFailure), workspace, attempt);
+            ProjectIntegrityVerifier.VerificationResult integrity = projectIntegrityVerifier.verifyFrontend(workspace);
+            if (!integrity.success()) {
+                return ProjectGenerationRetryExecutor.AttemptResult.failed(integrity.summary());
+            }
+            WorkspaceBuildService.BuildResult build = workspaceBuildService.buildFrontend(workspace);
+            if (!build.success()) {
+                return ProjectGenerationRetryExecutor.AttemptResult.failed("前端构建失败：" + compact(build.summary()));
+            }
+            return ProjectGenerationRetryExecutor.AttemptResult.succeeded(new GeneratedWorkspace(workspace, files));
+        });
+    }
+
+    private GeneratedWorkspace generateBackendWorkspace(GenerationRun run, PlanningInputs inputs) throws IOException {
+        return projectGenerationRetryExecutor.execute((attempt, previousFailure) -> {
+            Path workspace = prepareAttemptWorkspace(run, BACKEND_TASK_KEY, attempt);
+            List<String> files = generateBackendFiles(run, executionContext(inputs, previousFailure), workspace, attempt);
+            ProjectIntegrityVerifier.VerificationResult integrity = projectIntegrityVerifier.verifyBackend(workspace);
+            if (!integrity.success()) {
+                return ProjectGenerationRetryExecutor.AttemptResult.failed(integrity.summary());
+            }
+            WorkspaceBuildService.BuildResult build = workspaceBuildService.compileBackend(workspace);
+            if (!build.success()) {
+                return ProjectGenerationRetryExecutor.AttemptResult.failed("后端编译失败：" + compact(build.summary()));
+            }
+            return ProjectGenerationRetryExecutor.AttemptResult.succeeded(new GeneratedWorkspace(workspace, files));
+        });
+    }
+
+    private List<String> generateFrontendFiles(GenerationRun run, String executionContext, Path workspace,
+                                               int projectAttempt) throws IOException {
         List<String> files = fileManifestRetryExecutor.generate((prompt, attempt) -> collectAndSaveRawResponse(
-                run, FRONTEND_MANIFEST_STREAM_KEY, FRONTEND_TASK_KEY, "manifest-" + attempt,
+                run, FRONTEND_MANIFEST_STREAM_KEY, FRONTEND_TASK_KEY, "attempt-" + projectAttempt + "-manifest-" + attempt,
                 planningAiServiceFactory.createFrontendManifestAgent().generateFrontendFileManifest(prompt)),
-                workspaceFileService::parseFileManifest, inputs.toPrompt());
-        String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
+                workspaceFileService::parseFileManifest, executionContext);
+        String projectContext = executionContext + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
         for (int index = 0; index < files.size(); index++) {
             String path = files.get(index);
             agentOutputStreamHub.append(run.getRunId(), FRONTEND_TASK_KEY, "\n\n// " + path + "\n");
-            String source = collectAndSaveRawResponse(run, FRONTEND_TASK_KEY, FRONTEND_TASK_KEY, "file-" + index,
+            String source = collectAndSaveRawResponse(run, FRONTEND_TASK_KEY, FRONTEND_TASK_KEY,
+                    "attempt-" + projectAttempt + "-file-" + index,
                     planningAiServiceFactory.createFrontendExecutionAgent().generateFrontendSourceFile(
                             projectContext + "\n\ntarget-file: " + path));
             workspaceFileService.writeFile(workspace, path, source);
@@ -219,21 +261,51 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
         return files;
     }
 
-    private List<String> generateBackendFiles(GenerationRun run, PlanningInputs inputs, Path workspace) throws IOException {
+    private List<String> generateBackendFiles(GenerationRun run, String executionContext, Path workspace,
+                                              int projectAttempt) throws IOException {
         List<String> files = fileManifestRetryExecutor.generate((prompt, attempt) -> collectAndSaveRawResponse(
-                run, BACKEND_MANIFEST_STREAM_KEY, BACKEND_TASK_KEY, "manifest-" + attempt,
+                run, BACKEND_MANIFEST_STREAM_KEY, BACKEND_TASK_KEY, "attempt-" + projectAttempt + "-manifest-" + attempt,
                 planningAiServiceFactory.createBackendManifestAgent().generateBackendFileManifest(prompt)),
-                workspaceFileService::parseFileManifest, inputs.toPrompt());
-        String projectContext = inputs.toPrompt() + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
+                workspaceFileService::parseFileManifest, executionContext);
+        String projectContext = executionContext + "\n\nfile-manifest.json:\n" + objectMapper.writeValueAsString(Map.of("files", files));
         for (int index = 0; index < files.size(); index++) {
             String path = files.get(index);
             agentOutputStreamHub.append(run.getRunId(), BACKEND_TASK_KEY, "\n\n// " + path + "\n");
-            String source = collectAndSaveRawResponse(run, BACKEND_TASK_KEY, BACKEND_TASK_KEY, "file-" + index,
+            String source = collectAndSaveRawResponse(run, BACKEND_TASK_KEY, BACKEND_TASK_KEY,
+                    "attempt-" + projectAttempt + "-file-" + index,
                     planningAiServiceFactory.createBackendExecutionAgent().generateBackendSourceFile(
                             projectContext + "\n\ntarget-file: " + path));
             workspaceFileService.writeFile(workspace, path, source);
         }
         return files;
+    }
+
+    private Path prepareAttemptWorkspace(GenerationRun run, String taskKey, int attempt) throws IOException {
+        Path root = runRoot(run.getRunId());
+        Path workspace = root.resolve("workspace").resolve(taskKey + "-attempt-" + attempt).normalize();
+        if (!workspace.startsWith(root)) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "生成工作区路径不合法");
+        }
+        deleteDirectory(workspace);
+        Files.createDirectories(workspace);
+        if (attempt > 1) {
+            agentOutputStreamHub.replace(run.getRunId(), taskKey,
+                    "// 第 " + attempt + " 次完整项目生成：正在根据上一轮校验结果修复\n");
+        }
+        return workspace;
+    }
+
+    private String executionContext(PlanningInputs inputs, String previousFailure) {
+        if (previousFailure == null || previousFailure.isBlank()) {
+            return inputs.toPrompt();
+        }
+        return inputs.toPrompt() + "\n\n上一轮完整项目校验失败，必须在本轮修复以下问题并重新生成全部文件：\n"
+                + compact(previousFailure);
+    }
+
+    private void replaceWorkspace(Path target, Path source) throws IOException {
+        deleteDirectory(target);
+        copyDirectory(source, target);
     }
 
     private String collectAndSaveRawResponse(GenerationRun run, String streamKey, String taskKey, String stage,
@@ -403,7 +475,8 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
     }
 
     private String firstFailure(TaskResult frontend, TaskResult backend) {
-        return !frontend.success() ? frontend.message() : backend.message();
+        return taskFailureSummary.summarize(frontend.success() ? "" : frontend.message(),
+                backend.success() ? "" : backend.message());
     }
 
     private String safeMessage(Exception exception) {
@@ -435,6 +508,9 @@ public class ExecutionAgentServiceImpl implements ExecutionAgentService {
             return "product-spec.json:\n" + productSpec + "\n\narchitecture.json:\n" + architecture
                     + "\n\napi-contract.yaml:\n" + apiContract + "\n\ntask-manifest.json:\n" + taskManifest;
         }
+    }
+
+    private record GeneratedWorkspace(Path root, List<String> files) {
     }
 
     private record TaskResult(boolean success, String message) {
