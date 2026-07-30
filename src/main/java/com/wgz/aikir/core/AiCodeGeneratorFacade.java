@@ -7,6 +7,7 @@ import com.wgz.aikir.ai.model.HtmlCodeResult;
 import com.wgz.aikir.ai.model.MultiFileCodeResult;
 import com.wgz.aikir.ai.model.message.AiResponseMessage;
 import com.wgz.aikir.ai.streaming.ThinkingDisplayAdapter;
+import com.wgz.aikir.ai.streaming.TokenStreamFluxAdapter;
 import com.wgz.aikir.ai.streaming.ToolCallDisplayAdapter;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
@@ -33,6 +34,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 @Slf4j
 public class AiCodeGeneratorFacade {
+
+    private final TokenStreamFluxAdapter tokenStreamFluxAdapter = new TokenStreamFluxAdapter();
 
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
@@ -106,11 +109,13 @@ public class AiCodeGeneratorFacade {
         AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
-                Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);
+                Flux<String> codeStream = tokenStreamFluxAdapter.toFlux(
+                        aiCodeGeneratorService.generateHtmlCodeStream(userMessage));
                 yield processCodeStream(codeStream, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
-                Flux<String> codeStream = aiCodeGeneratorService.generateMultiFileCodeStream(userMessage);
+                Flux<String> codeStream = tokenStreamFluxAdapter.toFlux(
+                        aiCodeGeneratorService.generateMultiFileCodeStream(userMessage));
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             case VUE_PROJECT -> {

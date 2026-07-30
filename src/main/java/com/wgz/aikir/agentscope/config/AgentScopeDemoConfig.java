@@ -12,13 +12,13 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AgentScopeDemoConfig {
 
-    @Value("${langchain4j.open-ai.chat-model.base-url:https://api.deepseek.com}")
+    @Value("${langchain4j.open-ai.chat-model.base-url:}")
     private String baseUrl;
 
     @Value("${langchain4j.open-ai.chat-model.api-key:}")
     private String apiKey;
 
-    @Value("${langchain4j.open-ai.chat-model.model-name:deepseek-v4-flash}")
+    @Value("${langchain4j.open-ai.chat-model.model-name:}")
     private String modelName;
 
     @Bean

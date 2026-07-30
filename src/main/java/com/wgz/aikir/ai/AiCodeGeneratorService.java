@@ -6,7 +6,6 @@ import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
-import reactor.core.publisher.Flux;
 
 public interface AiCodeGeneratorService {
 
@@ -35,7 +34,7 @@ public interface AiCodeGeneratorService {
      * @return AI 的输出结果
      */
     @SystemMessage(fromResource = "prompt/codegen-html-system-prompt.txt")
-    Flux<String> generateHtmlCodeStream(@UserMessage String userMessage);
+    TokenStream generateHtmlCodeStream(@UserMessage String userMessage);
 
     /**
      * 生成多文件代码
@@ -44,7 +43,7 @@ public interface AiCodeGeneratorService {
      * @return AI 的输出结果
      */
     @SystemMessage(fromResource = "prompt/codegen-multi-file-system-prompt.txt")
-    Flux<String> generateMultiFileCodeStream(@UserMessage String userMessage);
+    TokenStream generateMultiFileCodeStream(@UserMessage String userMessage);
 
 
     /**
