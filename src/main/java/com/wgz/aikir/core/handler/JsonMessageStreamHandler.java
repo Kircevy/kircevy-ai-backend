@@ -115,6 +115,12 @@ public class JsonMessageStreamHandler {
                     return "";
                 }
             }
+            case TOOL_PARTIAL -> {
+                ToolPartialMessage toolPartialMessage = JSONUtil.toBean(chunk, ToolPartialMessage.class);
+                String partialContent = toolPartialMessage.getPartialContent();
+                chatHistoryStringBuilder.append(partialContent);
+                return partialContent;
+            }
             case TOOL_EXECUTED -> {
                 ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
                 String toolName = toolExecutedMessage.getName();
@@ -141,3 +147,4 @@ public class JsonMessageStreamHandler {
         }
     }
 }
+// @zbiti-ai:f:149:76365588
