@@ -6,9 +6,11 @@ import com.wgz.aikir.ai.AiCodeGeneratorServiceFactory;
 import com.wgz.aikir.ai.model.HtmlCodeResult;
 import com.wgz.aikir.ai.model.MultiFileCodeResult;
 import com.wgz.aikir.ai.model.message.AiResponseMessage;
+import com.wgz.aikir.ai.model.message.ToolPartialMessage;
 import com.wgz.aikir.ai.streaming.ThinkingDisplayAdapter;
 import com.wgz.aikir.ai.streaming.TokenStreamFluxAdapter;
 import com.wgz.aikir.ai.streaming.ToolCallDisplayAdapter;
+import com.wgz.aikir.ai.streaming.ToolPartialExtractor;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.core.builder.VueProjectBuilder;
 import com.wgz.aikir.core.builder.FullStackProjectBuilder;
@@ -19,6 +21,7 @@ import com.wgz.aikir.exception.ErrorCode;
 import com.wgz.aikir.model.enums.CodeGenTypeEnum;
 import com.wgz.aikir.service.FrontendPreviewBuildService;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialToolCall;
 import dev.langchain4j.service.TokenStream;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AiCodeGeneratorFacade {
 
     private final TokenStreamFluxAdapter tokenStreamFluxAdapter = new TokenStreamFluxAdapter();
+
+    private final ToolPartialExtractor toolPartialExtractor = new ToolPartialExtractor();
 
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
@@ -192,7 +197,23 @@ public class AiCodeGeneratorFacade {
             tokenStream.onPartialResponse((String partialResponse) -> {
                 AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                 sink.next(JSONUtil.toJsonStr(aiResponseMessage));
-            }).onPartialThinking(partialThinking -> thinkingDisplayAdapter.onPartialThinking(partialThinking.text())).beforeToolExecution(beforeToolExecution -> {
+            }).onPartialThinking(partialThinking -> thinkingDisplayAdapter.onPartialThinking(partialThinking.text()))
+              .onPartialToolCall((PartialToolCall partialToolCall) -> {
+                  try {
+                      ToolPartialExtractor.ExtractResult extractResult = toolPartialExtractor.extract(partialToolCall);
+                      if (extractResult.hasOutput()) {
+                          ToolPartialMessage partialMessage = new ToolPartialMessage(
+                                  partialToolCall.name(),
+                                  partialToolCall.index(),
+                                  extractResult.partialContent(),
+                                  extractResult.isFirst());
+                          sink.next(JSONUtil.toJsonStr(partialMessage));
+                      }
+                  } catch (Exception e) {
+                      log.warn("工具流式片段解析失败, tool: {}, index: {}", partialToolCall.name(), partialToolCall.index(), e);
+                  }
+              })
+              .beforeToolExecution(beforeToolExecution -> {
                 toolCallDisplayAdapter.beforeToolExecution(beforeToolExecution.request());
             }).onToolExecuted(toolExecution -> {
                 hasExecutedTool.set(true);
@@ -251,3 +272,4 @@ public class AiCodeGeneratorFacade {
         return false;
     }
 }
+// @zbiti-ai:f:274:8bf58b89
