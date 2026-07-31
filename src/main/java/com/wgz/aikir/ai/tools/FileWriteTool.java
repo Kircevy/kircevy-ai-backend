@@ -1,6 +1,5 @@
 package com.wgz.aikir.ai.tools;
 
-import cn.hutool.core.io.FileUtil;
 import cn.hutool.json.JSONObject;
 import com.wgz.aikir.constant.AppConstant;
 import com.wgz.aikir.service.FrontendPreviewBuildService;
@@ -107,13 +106,7 @@ public class FileWriteTool extends BaseTool {
     @Override
     public String generateToolExecutedResult(JSONObject arguments) {
         String relativeFilePath = arguments.getStr("relativeFilePath");
-        String suffix = FileUtil.getSuffix(relativeFilePath);
-        String content = arguments.getStr("content");
-        return String.format("""
-                        [工具调用] 写入文件 %s
-                        ```%s
-                        %s
-                        ```
-                        """, relativeFilePath, suffix, content);
+        return String.format("[工具调用] 写入文件 %s 成功", relativeFilePath);
     }
 }
+// @zbiti-ai:f:111:cc687fa1

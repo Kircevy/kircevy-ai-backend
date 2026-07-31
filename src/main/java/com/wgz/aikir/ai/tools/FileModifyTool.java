@@ -73,20 +73,7 @@ public class FileModifyTool extends BaseTool {
     @Override
     public String generateToolExecutedResult(JSONObject arguments) {
         String relativeFilePath = arguments.getStr("relativeFilePath");
-        String oldContent = arguments.getStr("oldContent");
-        String newContent = arguments.getStr("newContent");
-        return String.format("""
-               [工具调用] %s %s
-               
-               替换前：
-               ```
-               %s
-               ```
-               
-               替换后：
-               ```
-               %s
-               ```
-               """, getDisplayName(), relativeFilePath, oldContent, newContent);
+        return String.format("[工具调用] 修改文件 %s 成功", relativeFilePath);
     }
 }
+// @zbiti-ai:f:78:0422b9ed
