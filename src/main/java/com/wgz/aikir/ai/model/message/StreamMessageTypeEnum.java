@@ -11,7 +11,8 @@ public enum StreamMessageTypeEnum {
     AI_RESPONSE("ai_response", "AI响应"),
     THINKING("thinking", "AI思考"),
     TOOL_REQUEST("tool_request", "工具请求"),
-    TOOL_EXECUTED("tool_executed", "工具执行结果");
+    TOOL_EXECUTED("tool_executed", "工具执行结果"),
+    TOOL_PARTIAL("tool_partial", "工具流式片段");
 
     private final String value;
     private final String text;
@@ -33,3 +34,4 @@ public enum StreamMessageTypeEnum {
         return null;
     }
 }
+// @zbiti-ai:f:36:9220a08e
