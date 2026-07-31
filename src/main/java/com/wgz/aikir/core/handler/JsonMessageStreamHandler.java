@@ -128,12 +128,13 @@ public class JsonMessageStreamHandler {
                 try {
                     JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
                     String result = tool.generateToolExecutedResult(jsonObject);
-                    // 输出前端和要持久化的内容
-                    String output = String.format("\n\n%s\n\n", result);
+                    boolean needCloseCodeBlock = "writeFile".equals(toolName) || "modifyFile".equals(toolName);
+                    String output = needCloseCodeBlock
+                            ? String.format("\n```\n\n%s\n\n", result)
+                            : String.format("\n\n%s\n\n", result);
                     chatHistoryStringBuilder.append(output);
                     return output;
                 } catch (cn.hutool.json.JSONException e) {
-                    // AI 返回的工具参数 JSON 可能因流式传输截断或特殊字符未转义而导致解析失败
                     log.error("工具参数 JSON 解析失败，工具名: {}，参数内容: {}", toolName, toolExecutedMessage.getArguments(), e);
                     String fallbackOutput = String.format("\n\n[工具调用] %s（参数解析失败）\n\n", tool != null ? tool.getDisplayName() : toolName);
                     chatHistoryStringBuilder.append(fallbackOutput);
@@ -147,4 +148,4 @@ public class JsonMessageStreamHandler {
         }
     }
 }
-// @zbiti-ai:f:149:76365588
+// @zbiti-ai:f:150:91d2f941
