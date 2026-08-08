@@ -91,7 +91,7 @@ public class DockerComposeDeployService {
         if (!checkDockerAvailable()) {
             return DockerDeployResult.builder()
                     .success(false)
-                    .errorMessage("宿主机未安装 Docker 或 Docker 服务未启动，请选择「代码下载」模式获取源码后本地运行")
+                    .errorMessage("宿主机未安装 Docker 或 Docker 服务未启动，请选择「静态部署」模式获取源码后本地运行")
                     .build();
         }
 

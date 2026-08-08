@@ -196,7 +196,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Override
     public String deployApp(Long appId, User loginUser) {
-        // 兼容旧接口，默认代码下载模式
+        // 兼容旧接口，默认静态部署模式
         return deployApp(appId, DeployModeEnum.CODE_DOWNLOAD, loginUser);
     }
 
@@ -213,33 +213,43 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (!app.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限部署该应用");
         }
-        // 4. 检查是否已有 deployKey
+        // 4. 已部署的应用不允许重复部署
+        if (app.getDeployedTime() != null) {
+            if (StrUtil.isNotBlank(app.getDockerDeployUrl())) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR,
+                        "应用已通过 Docker 一键部署，请勿重复部署，请前往我的部署页面");
+            }
+            if (StrUtil.isNotBlank(app.getDeployKey())) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "应用已部署，请勿重复部署");
+            }
+        }
+        // 5. 检查是否已有 deployKey
         String deployKey = app.getDeployKey();
         // 如果没有，则生成 6 位 deployKey（字母 + 数字）
         if (StrUtil.isBlank(deployKey)) {
             deployKey = RandomUtil.randomString(6);
         }
-        // 5. 获取代码生成类型，获取原始代码生成路径（应用访问目录）
+        // 6. 获取代码生成类型，获取原始代码生成路径（应用访问目录）
         String codeGenType = app.getCodeGenType();
         String sourceDirName = codeGenType + "_" + appId;
         String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
-        // 6. 检查路径是否存在
+        // 7. 检查路径是否存在
         File sourceDir = new File(sourceDirPath);
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码路径不存在，请先生成应用");
         }
-        // 7. 按部署模式分发
+        // 8. 按部署模式分发
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         if (deployMode == DeployModeEnum.DOCKER_COMPOSE) {
             String composeProjectName = "fullstack_" + appId;
             return deployWithDockerCompose(appId, deployKey, composeProjectName, sourceDirPath, codeGenTypeEnum, loginUser);
         }
-        // 默认代码下载模式：构建并部署静态资源（前端预览）
+        // 默认静态部署模式：构建并部署前端静态资源（前端预览）
         return deployWithCodeDownload(appId, deployKey, sourceDir, sourceDirPath, codeGenType);
     }
 
     /**
-     * 代码下载模式部署：构建前端静态资源并部署到预览目录，同时提供完整源码下载
+     * 静态部署模式：构建前端静态资源并部署到预览目录，同时提供完整源码下载
      */
     private String deployWithCodeDownload(Long appId, String deployKey, File sourceDir,
                                           String sourceDirPath, String codeGenType) {
@@ -252,14 +262,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             ThrowUtils.throwIf(!distDir.exists() || !distDir.isDirectory(), ErrorCode.SYSTEM_ERROR, "应用构建成功，但dist目录不存在");
             sourceDir = distDir;
         } else if (codeGenType.equals(CodeGenTypeEnum.FULLSTACK.getValue())) {
-            // 全栈项目：构建前端并部署前端 dist（代码下载模式下，后端源码随 zip 下载，用户本地运行）
+            // 全栈项目：构建前端并部署前端 dist（静态部署模式下，后端源码随 zip 下载，用户本地运行）
             boolean buildSuccess = fullStackProjectBuilder.buildProject(sourceDirPath);
             ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "全栈项目前端构建失败");
             File frontendDistDir = new File(sourceDirPath, "frontend/dist");
             ThrowUtils.throwIf(!frontendDistDir.exists() || !frontendDistDir.isDirectory(),
                     ErrorCode.SYSTEM_ERROR, "全栈项目前端构建成功，但 dist 目录不存在");
             sourceDir = frontendDistDir;
-            log.info("全栈项目前端部署完成（代码下载模式），完整源码可通过 /app/download 下载，项目路径: {}", sourceDirPath);
+            log.info("全栈项目前端部署完成（静态部署模式），完整源码可通过 /app/download 下载，项目路径: {}", sourceDirPath);
         }
         // 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;

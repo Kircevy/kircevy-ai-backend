@@ -10,9 +10,9 @@ import lombok.Getter;
 public enum DeployModeEnum {
 
     /**
-     * 代码下载模式：下载完整源码 zip，用户本地运行
+     * 静态部署模式：构建前端静态资源并部署到预览地址，完整源码可另行下载
      */
-    CODE_DOWNLOAD("代码下载模式", "code_download"),
+    CODE_DOWNLOAD("静态部署模式", "code_download"),
 
     /**
      * Docker 一键部署模式：平台自动执行 docker-compose up -d

@@ -157,7 +157,7 @@ public class AppController {
     }
 
     /**
-     * 应用部署（支持代码下载 / Docker 一键部署两种模式）
+     * 应用部署（支持静态部署 / Docker 一键部署两种模式）
      *
      * @param appDeployRequest 部署请求（appId + deployMode）
      * @param request          请求
@@ -171,7 +171,7 @@ public class AppController {
         Long appId = appDeployRequest.getAppId();
         // 检查应用 ID 是否为空
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
-        // 解析部署模式（为空默认代码下载模式）
+        // 解析部署模式（为空默认静态部署模式）
         String deployModeValue = appDeployRequest.getDeployMode();
         DeployModeEnum deployMode = StrUtil.isBlank(deployModeValue)
                 ? DeployModeEnum.CODE_DOWNLOAD

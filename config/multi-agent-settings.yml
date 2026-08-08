@@ -1,1 +1,1 @@
-multi-agent: {enabled: true, fullstack-only: true, planning-enabled: true, execution-enabled: true}
+multi-agent: {enabled: true, fullstack-only: true, planning-enabled: true, execution-enabled: false}

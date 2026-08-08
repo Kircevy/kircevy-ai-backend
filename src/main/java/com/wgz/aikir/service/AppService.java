@@ -34,7 +34,7 @@ public interface AppService extends IService<App> {
     Flux<String> subscribeCodeGeneration(Long appId, User loginUser);
 
     /**
-     * 应用部署（默认代码下载模式，兼容旧接口）
+     * 应用部署（默认静态部署模式，兼容旧接口）
      *
      * @param appId 应用 ID
      * @param loginUser 登录用户

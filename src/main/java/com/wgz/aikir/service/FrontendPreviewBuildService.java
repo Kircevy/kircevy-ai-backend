@@ -113,7 +113,7 @@ public class FrontendPreviewBuildService {
 
             if (vueProjectBuilder.buildProject(projectDir.getAbsolutePath())) {
                 log.info("Vue preview is ready for appId: {}", appId);
-                generateFirstPreviewScreenshot(appId, "index.html#/");
+                generateFirstPreviewScreenshot(appId, "dist/index.html#/");
             }
         } catch (Exception exception) {
             // A later file write will schedule another build attempt.

@@ -17,7 +17,7 @@ public class AppDeployRequest implements Serializable {
 
     /**
      * 部署模式（枚举值）：
-     * - code_download：代码下载模式，下载完整源码 zip
+     * - code_download：静态部署模式，构建前端静态资源并部署到预览地址
      * - docker_compose：Docker 一键部署模式，平台自动执行 docker-compose up
      * 为空时默认 code_download
      */

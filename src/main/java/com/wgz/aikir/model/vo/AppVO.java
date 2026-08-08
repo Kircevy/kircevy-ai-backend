@@ -52,6 +52,11 @@ public class AppVO implements Serializable {
     private LocalDateTime deployedTime;
 
     /**
+     * Docker 部署访问地址（仅 docker_compose 模式下有值）
+     */
+    private String dockerDeployUrl;
+
+    /**
      * 优先级
      */
     private Integer priority;
